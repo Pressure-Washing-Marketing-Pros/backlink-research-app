@@ -1,0 +1,34 @@
+class,class_name,query
+1,Core city-based,"[CITY] [STATE] ""our sponsors"""
+1,Core city-based,"[CITY] [STATE] ""become a sponsor"""
+1,Core city-based,"[CITY] [STATE] ""sponsorship opportunities"""
+1,Core city-based,"[CITY] [STATE] ""event sponsors"""
+1,Core city-based,"[CITY] [STATE] ""nonprofit sponsors"""
+1,Core city-based,"[CITY] [STATE] ""school sponsors"""
+1,Core city-based,"[CITY] [STATE] ""youth sports sponsors"""
+1,Core city-based,"[CITY] [STATE] ""festival sponsors"""
+1,Core city-based,"[CITY] [STATE] ""community sponsors"""
+1,Core city-based,"[CITY] [STATE] ""sponsor package"""
+2,Core state-based,"[STATE] ""our sponsors"""
+2,Core state-based,"[STATE] ""become a sponsor"""
+2,Core state-based,"[STATE] ""sponsorship opportunities"""
+2,Core state-based,"[STATE] ""event sponsors"""
+2,Core state-based,"[STATE] ""nonprofit sponsors"""
+2,Core state-based,"[STATE] ""school sponsors"""
+2,Core state-based,"[STATE] ""festival sponsors"""
+2,Core state-based,"[STATE] ""community sponsors"""
+2,Core state-based,"[STATE] ""sponsor package"""
+2,Core state-based,"[STATE] ""sponsorship pdf"""
+3,High-value operator,"site:.org [CITY] [STATE] ""our sponsors"""
+3,High-value operator,"site:.org [CITY] [STATE] ""become a sponsor"""
+3,High-value operator,inurl:sponsor [CITY] [STATE]
+3,High-value operator,filetype:pdf [CITY] [STATE] sponsorship
+3,High-value operator,"site:.org [STATE] ""our sponsors"""
+3,High-value operator,"site:.org [STATE] ""become a sponsor"""
+3,High-value operator,inurl:sponsor [STATE]
+3,High-value operator,filetype:pdf [STATE] sponsorship
+4,Nearby relevance,"[NEARBY CITY] [STATE] ""our sponsors"""
+4,Nearby relevance,"[NEARBY CITY] [STATE] ""sponsorship opportunities"""
+4,Nearby relevance,[COUNTY] County [STATE] sponsors
+4,Nearby relevance,[METRO] sponsors
+4,Nearby relevance,"[METRO] ""our sponsors"""
