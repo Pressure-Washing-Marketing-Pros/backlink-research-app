@@ -101,12 +101,32 @@ function linkScore(status: SponsorshipCrawlResult["linkOpportunityStatus"]): num
   return 0;
 }
 
-function paymentScore(type: PaymentType): number {
-  if (type === "One-Time") return 20;
-  if (type === "Annual") return 10;
-  if (type === "Unknown") return 8;
-  if (type === "Monthly" || type === "Recurring") return 0;
-  return 8;
+function paymentScore(type: PaymentType, amount: string, budget: number): number {
+  let base = 8;
+  if (type === "One-Time") base = 20;
+  else if (type === "Annual") base = 10;
+  else if (type === "Unknown") base = 8;
+  else if (type === "Monthly" || type === "Recurring") base = 0;
+
+  const parsed = parseAmount(amount);
+  if (parsed !== null && typeof budget === "number") {
+    if (parsed <= budget) {
+      return Math.max(0, base + 5);
+    }
+    return Math.max(0, base - 5);
+  }
+
+  return base;
+}
+
+function parseAmount(amount: string): number | null {
+  if (!amount) return null;
+  // Try to extract the first currency-like number, e.g. "$1,200.00" or "1200"
+  const match = amount.match(/\$?\s*([0-9,]+(?:\.\d+)?)/);
+  if (!match) return null;
+  const value = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(value)) return null;
+  return value;
 }
 
 export function buildOpportunity(ctx: DecisionContext): Opportunity {
