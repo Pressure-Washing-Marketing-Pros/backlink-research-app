@@ -2,7 +2,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, configure the required API credentials in a local env file or your deployment platform.
+
+Create `.env.local` with:
+
+```bash
+DATAFORSEO_LOGIN=your-dataforseo-login
+DATAFORSEO_PASSWORD=your-dataforseo-password
+AHREFS_API_TOKEN=your-ahrefs-api-token
+```
+
+Then run the development server:
 
 ```bash
 npm run dev
@@ -15,6 +25,8 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+Use the built-in form to run the research workflow against DataForSEO and Ahrefs.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

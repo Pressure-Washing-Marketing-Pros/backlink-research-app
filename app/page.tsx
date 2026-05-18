@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { OPPORTUNITY_COLUMNS } from "@/lib/decision";
 import { toCsv } from "@/lib/csv";
 import type {
@@ -92,6 +92,8 @@ export default function Home() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [decisionFilter, setDecisionFilter] = useState<"All" | Decision>("All");
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<{ ready: boolean; missing: string[]; message: string } | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -214,6 +216,22 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  useEffect(() => {
+    async function loadStatus() {
+      try {
+        const res = await fetch("/api/status");
+        if (!res.ok) throw new Error("Unable to load status");
+        const json = await res.json();
+        setStatus(json);
+      } catch (err) {
+        setStatus({ ready: false, missing: [], message: err instanceof Error ? err.message : "Unknown error" });
+      } finally {
+        setStatusLoading(false);
+      }
+    }
+    loadStatus();
+  }, []);
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <main className="mx-auto max-w-7xl px-6 py-10">
@@ -226,6 +244,40 @@ export default function Home() {
             All non-rejected rows default to <em>Needs Human Review</em>.
           </p>
         </header>
+
+        <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Research engine status</h2>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {statusLoading ? "Checking environment..." : status?.message}
+              </p>
+            </div>
+            {!statusLoading && (
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  status?.ready
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                }`}
+              >
+                {status?.ready ? "Ready" : "Needs configuration"}
+              </span>
+            )}
+          </div>
+          {!statusLoading && (status?.missing?.length ?? 0) > 0 && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="font-medium">Missing env vars:</p>
+              <ul className="mt-1 list-inside list-disc">
+                {status?.missing?.map((name) => (
+                  <li key={name}>
+                    <code>{name}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
 
         <form
           onSubmit={onSubmit}
