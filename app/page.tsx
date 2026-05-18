@@ -233,23 +233,31 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="min-h-screen bg-gradient-to-br from-white to-slate-50">
       <main className="mx-auto max-w-7xl px-6 py-10">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Sponsorship Backlink Research
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            v1 (sync, no crawl) — SERP discovery + Ahrefs metrics + HTTPS auto-reject.
-            All non-rejected rows default to <em>Needs Human Review</em>.
-          </p>
+        <header className="mb-10 border-b border-slate-200 pb-8">
+          <div className="flex items-center gap-4">
+            <img
+              src="/pwmarketing-logo.png"
+              alt="PW Marketing Pros"
+              className="h-16 w-auto"
+            />
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">
+                Backlink Research
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                v1 (sync, no crawl) — SERP discovery + Ahrefs metrics + HTTPS auto-reject.
+              </p>
+            </div>
+          </div>
         </header>
 
-        <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-semibold">Research engine status</h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              <h2 className="text-base font-semibold text-slate-900">Research engine status</h2>
+              <p className="text-sm text-slate-600">
                 {statusLoading ? "Checking environment..." : status?.message}
               </p>
             </div>
@@ -257,8 +265,8 @@ export default function Home() {
               <span
                 className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
                   status?.ready
-                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                    : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-red-100 text-red-800"
                 }`}
               >
                 {status?.ready ? "Ready" : "Needs configuration"}
@@ -266,7 +274,7 @@ export default function Home() {
             )}
           </div>
           {!statusLoading && (status?.missing?.length ?? 0) > 0 && (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900">
               <p className="font-medium">Missing env vars:</p>
               <ul className="mt-1 list-inside list-disc">
                 {status?.missing?.map((name) => (
@@ -281,7 +289,7 @@ export default function Home() {
 
         <form
           onSubmit={onSubmit}
-          className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 md:grid-cols-2"
+          className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2"
         >
           <Field label="Business name *">
             <input
@@ -418,7 +426,7 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={loading}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-md bg-blue-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? "Running…" : "Run research"}
               </button>
@@ -426,13 +434,13 @@ export default function Home() {
                 type="button"
                 disabled={previewLoading}
                 onClick={previewQueries}
-                className="rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {previewLoading ? "Previewing…" : "Preview queries"}
               </button>
             </div>
             {loading && (
-              <span className="text-sm text-zinc-500">
+              <span className="text-sm text-slate-600">
                 This can take a few minutes — running 33 queries × ~30 results, then Ahrefs lookups.
               </span>
             )}
@@ -440,35 +448,35 @@ export default function Home() {
         </form>
 
         {previewError && (
-          <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200">
+          <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
             <p className="font-medium">Query preview error:</p>
             <p className="mt-1 font-mono">{previewError}</p>
           </div>
         )}
 
         {queryPreview && (
-          <section className="mt-6 rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <section className="mt-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold">Generated query bank</h2>
-                <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                <h2 className="text-lg font-semibold text-slate-900">Generated query bank</h2>
+                <p className="mt-1 text-sm text-slate-600">
                   These are the exact queries that will be used for this research run.
                 </p>
               </div>
-              <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+              <div className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900">
                 {queryPreview.length} queries
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="px-3 py-2">Class</th>
                     <th className="px-3 py-2">Target</th>
                     <th className="px-3 py-2">Query</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                <tbody className="divide-y divide-slate-100">
                   {queryPreview.map((q, index) => (
                     <tr key={`${q.query}-${index}`}>
                       <td className="px-3 py-2 font-mono text-xs">{q.class}</td>
@@ -483,7 +491,7 @@ export default function Home() {
         )}
 
         {missing && (
-          <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
             <p className="font-medium">Missing required inputs:</p>
             <ul className="mt-1 list-inside list-disc">
               {missing.map((f) => (
@@ -496,7 +504,7 @@ export default function Home() {
         )}
 
         {error && (
-          <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200">
+          <div className="mt-6 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-900">
             <p className="font-medium">Error:</p>
             <p className="mt-1 font-mono">{error}</p>
           </div>
@@ -514,8 +522,8 @@ export default function Home() {
                     onClick={() => setDecisionFilter(f)}
                     className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                       decisionFilter === f
-                        ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                        : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                        ? "bg-blue-900 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }`}
                   >
                     {f}
@@ -530,15 +538,15 @@ export default function Home() {
               />
               <button
                 onClick={exportCsv}
-                className="ml-auto rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                className="ml-auto rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
               >
                 Export non-rejected to CSV
               </button>
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                <thead className="bg-zinc-50 dark:bg-zinc-900/60">
+            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
                   <tr>
                     {[
                       "Score",
@@ -670,12 +678,12 @@ export default function Home() {
 }
 
 const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
+  "w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
+      <span className="text-xs font-medium text-slate-700">{label}</span>
       {children}
     </label>
   );
@@ -683,9 +691,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function DecisionBadge({ decision }: { decision: Decision }) {
   const styles: Record<Decision, string> = {
-    Approve: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300",
-    "Needs Human Review": "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300",
-    Reject: "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
+    Approve: "bg-emerald-100 text-emerald-800",
+    "Needs Human Review": "bg-amber-100 text-amber-800",
+    Reject: "bg-red-100 text-red-800",
   };
   return (
     <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${styles[decision]}`}>
@@ -707,39 +715,39 @@ function SummaryPanel({
   const rejectedCount = mergedOpportunities.filter((o) => o.Decision === "Reject").length;
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="text-lg font-semibold">Run summary</h2>
+    <div className="rounded-lg border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-900">Run summary</h2>
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
         <div>
-          <dt className="text-zinc-500">Client</dt>
-          <dd>{summary.client}</dd>
+          <dt className="text-slate-600">Client</dt>
+          <dd className="text-slate-900">{summary.client}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Target</dt>
-          <dd>{summary.target_city}, {summary.target_state}</dd>
+          <dt className="text-slate-600">Target</dt>
+          <dd className="text-slate-900">{summary.target_city}, {summary.target_state}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Run date</dt>
-          <dd>{new Date(summary.run_date).toLocaleString()}</dd>
+          <dt className="text-slate-600">Run date</dt>
+          <dd className="text-slate-900">{new Date(summary.run_date).toLocaleString()}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Queries used</dt>
-          <dd>{summary.queries_used.length}</dd>
+          <dt className="text-slate-600">Queries used</dt>
+          <dd className="text-slate-900">{summary.queries_used.length}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Total candidates</dt>
-          <dd className="font-mono">{mergedOpportunities.length}</dd>
+          <dt className="text-slate-600">Total candidates</dt>
+          <dd className="font-mono text-slate-900">{mergedOpportunities.length}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Approved</dt>
-          <dd className="font-mono">{approvedCount}</dd>
+          <dt className="text-slate-600">Approved</dt>
+          <dd className="font-mono text-slate-900">{approvedCount}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Needs review</dt>
-          <dd className="font-mono">{reviewCount}</dd>
+          <dt className="text-slate-600">Needs review</dt>
+          <dd className="font-mono text-slate-900">{reviewCount}</dd>
         </div>
         <div>
-          <dt className="text-zinc-500">Rejected</dt>
+          <dt className="text-slate-600">Rejected</dt>
           <dd className="font-mono">{rejectedCount}</dd>
         </div>
       </dl>
