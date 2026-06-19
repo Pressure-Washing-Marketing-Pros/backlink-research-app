@@ -94,6 +94,9 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<{ ready: boolean; missing: string[]; message: string } | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [savingToInventory, setSavingToInventory] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -216,6 +219,32 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  async function saveToInventory() {
+    if (!result) return;
+    setSavingToInventory(true);
+    setSaveSuccess(null);
+    try {
+      const res = await fetch("/api/opportunities/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runResult: result,
+          clientName: result.summary.client,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save opportunities");
+      }
+      setSaveSuccess(`Successfully saved ${data.saved_count} opportunities to inventory!`);
+      setShowSaveDialog(false);
+    } catch (err) {
+      alert(`Error saving to inventory: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingToInventory(false);
+    }
+  }
+
   useEffect(() => {
     async function loadStatus() {
       try {
@@ -236,20 +265,28 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-50">
       <main className="mx-auto max-w-7xl px-6 py-10">
         <header className="mb-10 border-b border-slate-200 pb-8">
-          <div className="flex items-center gap-4">
-            <img
-              src="/pwmarketing-logo.png"
-              alt="PW Marketing Pros"
-              className="h-16 w-auto"
-            />
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">
-                Backlink Research
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                v1 (sync, no crawl) — SERP discovery + Ahrefs metrics + HTTPS auto-reject.
-              </p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <img
+                src="/pwmarketing-logo.png"
+                alt="PW Marketing Pros"
+                className="h-16 w-auto"
+              />
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">
+                  Backlink Research
+                </h1>
+                <p className="mt-1 text-sm text-slate-600">
+                  v1 (sync, no crawl) — SERP discovery + Ahrefs metrics + HTTPS auto-reject.
+                </p>
+              </div>
             </div>
+            <a
+              href="/dashboard"
+              className="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+            >
+              View Inventory
+            </a>
           </div>
         </header>
 
@@ -537,8 +574,14 @@ export default function Home() {
                 className={`${inputClass} max-w-sm`}
               />
               <button
+                onClick={() => setShowSaveDialog(true)}
+                className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+              >
+                Save to Inventory
+              </button>
+              <button
                 onClick={exportCsv}
-                className="ml-auto rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                className="ml-2 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
               >
                 Export non-rejected to CSV
               </button>
@@ -670,6 +713,52 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+
+            {saveSuccess && (
+              <div className="mt-4 rounded-md border border-green-300 bg-green-50 p-4 text-sm text-green-900">
+                <p className="font-medium">✓ {saveSuccess}</p>
+                <p className="mt-1 text-xs text-green-700">
+                 Visit the <a href="/dashboard" className="font-medium hover:underline">inventory dashboard</a> to search and reuse these opportunities.
+                </p>
+              </div>
+            )}
+
+            {showSaveDialog && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="rounded-lg bg-white shadow-xl max-w-md w-full mx-4">
+                  <div className="border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-lg font-semibold text-slate-900">Save to Inventory</h3>
+                  </div>
+                  <div className="px-6 py-4 space-y-3">
+                    <p className="text-sm text-slate-600">
+                      This will save <strong>{mergedOpportunities.filter((o) => o.Decision !== "Reject").length}</strong> approved and review opportunities to your inventory for future reuse.
+                    </p>
+                    <div className="bg-blue-50 rounded-md p-3 text-xs text-blue-900">
+                      <p className="font-medium mb-1">Opportunities will be saved as:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>{mergedOpportunities.filter((o) => o.Decision === "Approve").length} Approved</li>
+                        <li>{mergedOpportunities.filter((o) => o.Decision === "Needs Human Review").length} Needs Review</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-200 flex gap-3 px-6 py-4">
+                    <button
+                      onClick={() => setShowSaveDialog(false)}
+                      className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveToInventory}
+                      disabled={savingToInventory}
+                      className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {savingToInventory ? "Saving..." : "Save to Inventory"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         )}
       </main>
