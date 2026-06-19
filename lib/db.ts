@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { randomUUID } from "crypto";
 import { mkdirSync, existsSync } from "fs";
-import type { Opportunity, RunResult } from "./types";
+import type { RunResult } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "opportunities.db");
@@ -16,7 +16,14 @@ function getDb(): Database.Database {
       mkdirSync(DATA_DIR, { recursive: true });
     }
     db = new Database(DB_PATH);
+    // Configure SQLite for better concurrency and performance
     db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL"); // Faster writes, still safe
+    db.pragma("cache_size = -64000"); // 64MB cache
+    db.pragma("temp_store = MEMORY");
+    db.pragma("mmap_size = 30000000"); // 30MB mmap
+    db.pragma("page_size = 4096");
+    db.pragma("busy_timeout = 5000"); // 5 second timeout for locks
     initializeSchema();
   }
   return db;
@@ -93,8 +100,7 @@ function initializeSchema(): void {
   `);
 }
 
-export interface StoredOpportunity
-  extends Omit<Opportunity, "DR" | "DA" | "Traffic"> {
+export interface StoredOpportunity {
   id: string;
   domain: string;
   sponsorship_url: string;
@@ -133,9 +139,6 @@ export interface StoredOpportunity
   updated_at: number;
   last_used_by_client?: string | null;
   last_used_at?: number | null;
-  DR: number | "Unknown";
-  DA: number | "Unknown";
-  Traffic: number | "Unknown";
 }
 
 export async function saveOpportunitiesToDb(
@@ -468,4 +471,15 @@ export async function getCitiesAndStates(): Promise<{
   const states = (statesQuery.all() as { state: string }[]).map((s) => s.state);
 
   return { cities, states };
+}
+
+// Checkpoint WAL file periodically to prevent bloat
+export async function checkpointWAL(): Promise<void> {
+  const database = getDb();
+  try {
+    // RESTART checkpoint: blocks until all readers complete, then folds WAL into main DB
+    database.pragma("wal_checkpoint(RESTART)");
+  } catch (error) {
+    console.warn("WAL checkpoint failed (non-critical):", error);
+  }
 }

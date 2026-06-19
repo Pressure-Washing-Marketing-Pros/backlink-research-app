@@ -1,9 +1,12 @@
 import {
   searchOpportunities,
   getCitiesAndStates,
+  checkpointWAL,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
+
+let lastCheckpoint = Date.now();
 
 export async function GET(request: Request) {
   try {
@@ -33,6 +36,12 @@ export async function GET(request: Request) {
       sortBy,
       sortOrder,
     });
+
+    // Checkpoint WAL every 30 seconds to prevent bloat
+    if (Date.now() - lastCheckpoint > 30000) {
+      lastCheckpoint = Date.now();
+      checkpointWAL().catch((err) => console.warn("Checkpoint failed:", err));
+    }
 
     return Response.json(result);
   } catch (error) {
