@@ -48,10 +48,11 @@ export default function Dashboard() {
     const fetchStats = async () => {
       try {
         const response = await fetch("/api/research-runs?stats=true");
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+        const data = await response.json();
+        setStats(data);
       } catch (err) {
         console.error("Error fetching stats:", err);
       } finally {
@@ -62,10 +63,11 @@ export default function Dashboard() {
     const fetchCitiesAndStates = async () => {
       try {
         const response = await fetch("/api/opportunities/search?getCitiesAndStates=true");
-        if (response.ok) {
-          const data = await response.json();
-          setCitiesAndStates(data);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+        const data = await response.json();
+        setCitiesAndStates(data);
       } catch (err) {
         console.error("Error fetching cities and states:", err);
       }
@@ -98,7 +100,8 @@ export default function Dashboard() {
         const response = await fetch(`/api/opportunities/search?${params}`);
 
         if (!response.ok) {
-          throw new Error("Failed to fetch opportunities");
+          const errorText = await response.text();
+          throw new Error(`Failed to fetch opportunities: HTTP ${response.status} - ${errorText}`);
         }
 
         const data: SearchResponse = await response.json();
