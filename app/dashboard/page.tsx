@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { StoredOpportunity } from "@/lib/db";
 
@@ -415,7 +415,7 @@ export default function Dashboard() {
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {opportunities.map((opp, idx) => (
-                          <tbody key={opp.id ?? idx}>
+                          <Fragment key={opp.id ?? idx}>
                             <tr className="hover:bg-gray-50 cursor-pointer">
                               <td
                                 className="px-6 py-4 text-sm text-gray-900 font-medium hover:text-blue-600"
@@ -423,30 +423,30 @@ export default function Dashboard() {
                                   setExpandedId(expandedId === opp.id ? null : opp.id)
                                 }
                               >
-                                {opp.Domain || "N/A"}
+                                {opp.domain || "N/A"}
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-600">
-                                {opp.City}, {opp.State}
+                                {opp.city}, {opp.state}
                               </td>
                               <td className="px-6 py-4 text-sm">
                                 <span
                                   className={`px-2 py-1 rounded text-xs font-medium ${
-                                    opp.Decision === "Approve"
+                                    opp.decision === "Approve"
                                       ? "bg-green-100 text-green-800"
-                                      : opp.Decision === "Needs Human Review"
+                                      : opp.decision === "Needs Human Review"
                                         ? "bg-yellow-100 text-yellow-800"
                                         : "bg-red-100 text-red-800"
                                   }`}
                                 >
-                                  {opp.Decision}
+                                  {opp.decision}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-600">
-                                {typeof opp.DR === "number" ? opp.DR : "N/A"}
+                                {typeof opp.dr === "number" ? opp.dr : "N/A"}
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-600">
-                                {typeof opp.Traffic === "number"
-                                  ? opp.Traffic.toLocaleString()
+                                {typeof opp.organic_traffic === "number"
+                                  ? opp.organic_traffic.toLocaleString()
                                   : "N/A"}
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-600">
@@ -509,7 +509,7 @@ export default function Dashboard() {
                                 </td>
                               </tr>
                             )}
-                          </tbody>
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
