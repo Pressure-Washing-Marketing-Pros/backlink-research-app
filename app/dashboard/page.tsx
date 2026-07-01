@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type { StoredOpportunity } from "@/lib/db";
+import { toCsv } from "@/lib/csv";
 
 interface Stats {
   totalOpportunities: number;
@@ -21,6 +22,44 @@ interface SearchResponse {
   total: number;
 }
 
+const DECISION_OPTIONS = ["Approve", "Needs Human Review", "Reject"] as const;
+
+const EXPORT_COLUMNS = [
+  "opportunity_name",
+  "domain",
+  "sponsorship_url",
+  "sponsor_page_url",
+  "location",
+  "state",
+  "city",
+  "decision",
+  "human_review_trigger",
+  "payment_amount",
+  "payment_type",
+  "submission_method",
+  "contact_email",
+  "dr",
+  "organic_traffic",
+  "link_evidence",
+  "current_sponsors_displayed",
+  "freshness_notes",
+  "last_checked_at",
+  "last_refreshed_at",
+  "notes",
+];
+
+function formatDate(epochSeconds?: number | null): string {
+  if (!epochSeconds) return "Never";
+  return new Date(epochSeconds * 1000).toLocaleDateString();
+}
+
+function decisionBadgeClass(decision?: string): string {
+  if (decision === "Approve") return "bg-green-100 text-green-800";
+  if (decision === "Needs Human Review") return "bg-yellow-100 text-yellow-800";
+  if (decision === "Reject") return "bg-red-100 text-red-800";
+  return "bg-gray-100 text-gray-700";
+}
+
 export default function Dashboard() {
   const [opportunities, setOpportunities] = useState<StoredOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,18 +71,46 @@ export default function Dashboard() {
     cities: string[];
     states: string[];
   } | null>(null);
+  const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Search/filter state
   const [cityFilter, setCityFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("");
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
+  const [minDr, setMinDr] = useState("");
+  const [maxDr, setMaxDr] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "dr" | "traffic" | "score">("created");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("DESC");
   const [currentPage, setCurrentPage] = useState(0);
   const limit = 50;
 
-  // Fetch stats and cities/states on mount
+  const buildParams = useCallback(
+    (overrides: Record<string, string> = {}) => {
+      const params = new URLSearchParams({
+        limit: String(limit),
+        offset: String(currentPage * limit),
+        sortBy,
+        sortOrder,
+      });
+      if (cityFilter) params.append("city", cityFilter);
+      if (stateFilter) params.append("state", stateFilter);
+      if (searchTerm) params.append("search", searchTerm);
+      if (decisionFilter) params.append("decision", decisionFilter);
+      if (paymentTypeFilter) params.append("paymentType", paymentTypeFilter);
+      if (minDr) params.append("minDr", minDr);
+      if (maxDr) params.append("maxDr", maxDr);
+      for (const [k, v] of Object.entries(overrides)) params.set(k, v);
+      return params;
+    },
+    [cityFilter, stateFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage],
+  );
+
+  // Fetch stats on mount
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -59,10 +126,18 @@ export default function Dashboard() {
         setStatsLoading(false);
       }
     };
+    fetchStats();
+  }, []);
 
+  // City list depends on the selected state — "user selects a state, city
+  // filter only shows locations from that state" (statewide entries have an
+  // empty city and are still shown under the state filter itself).
+  useEffect(() => {
     const fetchCitiesAndStates = async () => {
       try {
-        const response = await fetch("/api/opportunities/search?getCitiesAndStates=true");
+        const params = new URLSearchParams({ getCitiesAndStates: "true" });
+        if (stateFilter) params.append("state", stateFilter);
+        const response = await fetch(`/api/opportunities/search?${params}`);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -72,38 +147,20 @@ export default function Dashboard() {
         console.error("Error fetching cities and states:", err);
       }
     };
-
-    fetchStats();
     fetchCitiesAndStates();
-  }, []);
+  }, [stateFilter]);
 
   // Fetch opportunities when filters/pagination changes
-  const offset = currentPage * limit;
   useEffect(() => {
     const fetchOpportunities = async () => {
       setLoading(true);
       setError(null);
-
       try {
-        const params = new URLSearchParams({
-          limit: String(limit),
-          offset: String(offset),
-          sortBy,
-          sortOrder,
-        });
-
-        if (cityFilter) params.append("city", cityFilter);
-        if (stateFilter) params.append("state", stateFilter);
-        if (searchTerm) params.append("search", searchTerm);
-        if (decisionFilter) params.append("decision", decisionFilter);
-
-        const response = await fetch(`/api/opportunities/search?${params}`);
-
+        const response = await fetch(`/api/opportunities/search?${buildParams()}`);
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`Failed to fetch opportunities: HTTP ${response.status} - ${errorText}`);
         }
-
         const data: SearchResponse = await response.json();
         setOpportunities(data.opportunities);
       } catch (err) {
@@ -112,15 +169,18 @@ export default function Dashboard() {
         setLoading(false);
       }
     };
-
     fetchOpportunities();
-  }, [cityFilter, stateFilter, searchTerm, decisionFilter, sortBy, sortOrder, offset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityFilter, stateFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage]);
 
   const resetFilters = useCallback(() => {
     setCityFilter("");
     setStateFilter("");
     setSearchTerm("");
     setDecisionFilter("");
+    setPaymentTypeFilter("");
+    setMinDr("");
+    setMaxDr("");
     setSortBy("created");
     setSortOrder("DESC");
     setCurrentPage(0);
@@ -131,10 +191,7 @@ export default function Dashboard() {
       await fetch(`/api/opportunities/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "markUsed",
-          clientName,
-        }),
+        body: JSON.stringify({ action: "markUsed", clientName }),
       });
       alert("Opportunity marked as used!");
     } catch (err) {
@@ -142,6 +199,84 @@ export default function Dashboard() {
       alert("Failed to mark opportunity as used");
     }
   }, []);
+
+  const handleDecisionChange = useCallback(async (id: string, decision: string) => {
+    setSavingDecisionId(id);
+    try {
+      const res = await fetch(`/api/opportunities/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setDecision", decision }),
+      });
+      if (!res.ok) throw new Error("Failed to update decision");
+      setOpportunities((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, decision } : o)),
+      );
+    } catch (err) {
+      alert(`Failed to update decision: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingDecisionId(null);
+    }
+  }, []);
+
+  const handleRefresh = useCallback(async (id: string) => {
+    setRefreshingId(id);
+    setRefreshNote(null);
+    try {
+      const res = await fetch(`/api/opportunities/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Refresh failed");
+      setRefreshNote(data.note ?? "Refreshed.");
+      const updated = await fetch(`/api/opportunities/${id}`);
+      if (updated.ok) {
+        const fresh: StoredOpportunity = await updated.json();
+        setOpportunities((prev) => prev.map((o) => (o.id === id ? fresh : o)));
+      }
+    } catch (err) {
+      alert(`Failed to refresh: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setRefreshingId(null);
+    }
+  }, []);
+
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      const params = buildParams({ limit: "1000", offset: "0" });
+      const res = await fetch(`/api/opportunities/search?${params}`);
+      if (!res.ok) throw new Error("Export fetch failed");
+      const data: SearchResponse = await res.json();
+      const rows = data.opportunities.map((o) => ({
+        ...o,
+        last_checked_at: formatDate(o.last_checked_at),
+        last_refreshed_at: formatDate(o.last_refreshed_at),
+      }));
+      const csv = toCsv(EXPORT_COLUMNS, rows as unknown as Record<string, unknown>[]);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `sponsorship-inventory-${date}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [buildParams]);
+
+  const paymentTypes = useMemo(
+    () => ["One-Time", "Annual", "Monthly", "Recurring", "Unknown"],
+    [],
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -151,7 +286,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Sponsorship Inventory</h1>
-              <p className="text-gray-600 mt-1">View and search saved sponsorship opportunities</p>
+              <p className="text-gray-600 mt-1">Review, approve, reject, refresh, and export sponsorship opportunities</p>
             </div>
             <Link
               href="/"
@@ -190,7 +325,7 @@ export default function Dashboard() {
                         <span className="font-medium">{stats.decisionCounts.Approve}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-yellow-600">⊙ Review</span>
+                        <span className="text-yellow-600">⊙ Needs Human Review</span>
                         <span className="font-medium">{stats.decisionCounts["Needs Human Review"]}</span>
                       </div>
                       <div className="flex justify-between">
@@ -211,11 +346,11 @@ export default function Dashboard() {
 
                   {stats.cityCounts.length > 0 && (
                     <div>
-                      <p className="text-sm font-medium text-gray-900 mb-2">Top Cities</p>
+                      <p className="text-sm font-medium text-gray-900 mb-2">Top Locations</p>
                       <div className="space-y-1 text-xs">
                         {stats.cityCounts.slice(0, 5).map((item) => (
                           <div key={item.city} className="flex justify-between text-gray-600">
-                            <span>{item.city}</span>
+                            <span>{item.city || "Statewide"}</span>
                             <span className="font-medium">{item.count}</span>
                           </div>
                         ))}
@@ -245,13 +380,20 @@ export default function Dashboard() {
           <div className="lg:col-span-3 space-y-6">
             {/* Filters */}
             <div className="bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Filters</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+                <button
+                  onClick={exportCsv}
+                  disabled={exporting}
+                  className="px-3 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {exporting ? "Exporting…" : "Export CSV (current filters)"}
+                </button>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Search
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
                   <input
                     type="text"
                     value={searchTerm}
@@ -265,34 +407,12 @@ export default function Dashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    City
-                  </label>
-                  <select
-                    value={cityFilter}
-                    onChange={(e) => {
-                      setCityFilter(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All Cities</option>
-                    {citiesAndStates?.cities.map((city) => (
-                      <option key={city} value={city}>
-                        {city}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    State
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
                   <select
                     value={stateFilter}
                     onChange={(e) => {
                       setStateFilter(e.target.value);
+                      setCityFilter("");
                       setCurrentPage(0);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -308,8 +428,27 @@ export default function Dashboard() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Decision
+                    City / Location {stateFilter ? `(${stateFilter})` : ""}
                   </label>
+                  <select
+                    value={cityFilter}
+                    onChange={(e) => {
+                      setCityFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">{stateFilter ? "All cities in state" : "All Cities"}</option>
+                    {citiesAndStates?.cities.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Decision Status</label>
                   <select
                     value={decisionFilter}
                     onChange={(e) => {
@@ -318,17 +457,64 @@ export default function Dashboard() {
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">All Decisions</option>
+                    <option value="">All</option>
                     <option value="Approve">Approved</option>
-                    <option value="Needs Human Review">Needs Review</option>
+                    <option value="Needs Human Review">Needs Human Review</option>
                     <option value="Reject">Rejected</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Sort By
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
+                  <select
+                    value={paymentTypeFilter}
+                    onChange={(e) => {
+                      setPaymentTypeFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Any</option>
+                    {paymentTypes.map((pt) => (
+                      <option key={pt} value={pt}>
+                        {pt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Min DR</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={minDr}
+                    onChange={(e) => {
+                      setMinDr(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max DR</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={maxDr}
+                    onChange={(e) => {
+                      setMaxDr(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
                   <select
                     value={sortBy}
                     onChange={(e) => {
@@ -339,25 +525,8 @@ export default function Dashboard() {
                   >
                     <option value="created">Date Added</option>
                     <option value="dr">Domain Rating</option>
-                    <option value="traffic">Organic Traffic</option>
+                    <option value="traffic">Organic Traffic (secondary)</option>
                     <option value="score">Score</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Order
-                  </label>
-                  <select
-                    value={sortOrder}
-                    onChange={(e) => {
-                      setSortOrder(e.target.value as "ASC" | "DESC");
-                      setCurrentPage(0);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="DESC">Descending</option>
-                    <option value="ASC">Ascending</option>
                   </select>
                 </div>
               </div>
@@ -374,6 +543,11 @@ export default function Dashboard() {
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
                 {error}
+              </div>
+            )}
+            {refreshNote && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-800 text-sm">
+                {refreshNote}
               </div>
             )}
 
@@ -393,77 +567,94 @@ export default function Dashboard() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Domain
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Opportunity
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Location
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Decision
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             DR
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Traffic
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Method
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Package / Payment
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Action
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Last Checked
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Actions
                           </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {opportunities.map((opp, idx) => (
-                          <Fragment key={opp.id ?? idx}>
-                            <tr className="hover:bg-gray-50 cursor-pointer">
+                        {opportunities.map((opp) => (
+                          <Fragment key={opp.id}>
+                            <tr className="hover:bg-gray-50">
                               <td
-                                className="px-6 py-4 text-sm text-gray-900 font-medium hover:text-blue-600"
-                                onClick={() =>
-                                  setExpandedId(expandedId === opp.id ? null : opp.id)
-                                }
+                                className="px-4 py-4 text-sm text-gray-900 font-medium hover:text-blue-600 cursor-pointer"
+                                onClick={() => setExpandedId(expandedId === opp.id ? null : opp.id)}
                               >
-                                {opp.domain || "N/A"}
+                                {opp.opportunity_name || opp.domain || "N/A"}
+                                <div className="text-xs text-gray-500 font-normal">{opp.domain}</div>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
-                                {opp.city}, {opp.state}
+                              <td className="px-4 py-4 text-sm text-gray-600">
+                                {opp.location || `${opp.city || ""}${opp.city && opp.state ? ", " : ""}${opp.state || ""}` || "Unknown"}
                               </td>
-                              <td className="px-6 py-4 text-sm">
-                                <span
-                                  className={`px-2 py-1 rounded text-xs font-medium ${
-                                    opp.decision === "Approve"
-                                      ? "bg-green-100 text-green-800"
-                                      : opp.decision === "Needs Human Review"
-                                        ? "bg-yellow-100 text-yellow-800"
-                                        : "bg-red-100 text-red-800"
-                                  }`}
+                              <td className="px-4 py-4 text-sm">
+                                <select
+                                  value={opp.decision ?? ""}
+                                  disabled={savingDecisionId === opp.id}
+                                  onChange={(e) => handleDecisionChange(opp.id, e.target.value)}
+                                  className={`px-2 py-1 rounded text-xs font-medium border-0 ${decisionBadgeClass(opp.decision)}`}
                                 >
-                                  {opp.decision}
-                                </span>
+                                  {DECISION_OPTIONS.map((d) => (
+                                    <option key={d} value={d}>
+                                      {d}
+                                    </option>
+                                  ))}
+                                </select>
+                                {opp.human_review_trigger && opp.human_review_trigger !== "None" && (
+                                  <div className="mt-1 text-[11px] text-gray-500 max-w-xs">
+                                    {opp.human_review_trigger}
+                                  </div>
+                                )}
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
+                              <td className="px-4 py-4 text-sm text-gray-900 font-semibold">
                                 {typeof opp.dr === "number" ? opp.dr : "N/A"}
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
+                              <td className="px-4 py-4 text-xs text-gray-400">
                                 {typeof opp.organic_traffic === "number"
                                   ? opp.organic_traffic.toLocaleString()
                                   : "N/A"}
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
-                                {opp.submission_method || "N/A"}
+                              <td className="px-4 py-4 text-sm text-gray-600">
+                                {opp.payment_amount || "Unknown"}
+                                {opp.payment_type ? ` (${opp.payment_type})` : ""}
                               </td>
-                              <td className="px-6 py-4 text-sm">
+                              <td className="px-4 py-4 text-xs text-gray-500">
+                                {formatDate(opp.last_checked_at)}
+                              </td>
+                              <td className="px-4 py-4 text-sm space-x-2 whitespace-nowrap">
+                                <button
+                                  onClick={() => handleRefresh(opp.id)}
+                                  disabled={refreshingId === opp.id}
+                                  className="text-blue-600 hover:text-blue-900 font-medium disabled:opacity-50"
+                                >
+                                  {refreshingId === opp.id ? "Refreshing…" : "Refresh"}
+                                </button>
                                 <button
                                   onClick={() => {
                                     const clientName = prompt("Client name:");
-                                    if (clientName) {
-                                      handleReuseOpportunity(opp.id, clientName);
-                                    }
+                                    if (clientName) handleReuseOpportunity(opp.id, clientName);
                                   }}
-                                  className="text-blue-600 hover:text-blue-900 font-medium"
+                                  className="text-gray-600 hover:text-gray-900 font-medium"
                                 >
                                   Reuse
                                 </button>
@@ -471,43 +662,78 @@ export default function Dashboard() {
                             </tr>
                             {expandedId === opp.id && (
                               <tr className="bg-gray-50">
-                                <td colSpan={7} className="px-6 py-4">
-                                  <div className="space-y-2 text-sm">
-                                    <div>
-                                      <p className="font-medium text-gray-900">Sponsorship URL</p>
-                                      <a
-                                        href={opp.sponsorship_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 hover:underline break-all"
-                                      >
-                                        {opp.sponsorship_url}
-                                      </a>
-                                    </div>
-                                    <div>
-                                      <p className="font-medium text-gray-900">Contact</p>
-                                      <p className="text-gray-600">
-                                        {opp.contact_person || "N/A"} - {opp.contact_email || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="font-medium text-gray-900">Link Status</p>
-                                      <p className="text-gray-600">
-                                        {opp.link_opportunity_status || "Unknown"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="font-medium text-gray-900">Payment</p>
-                                      <p className="text-gray-600">
-                                        {opp.payment_amount || "N/A"} ({opp.payment_type || "Unknown"})
-                                      </p>
-                                    </div>
-                                    {opp.notes && (
+                                <td colSpan={8} className="px-6 py-4">
+                                  <div className="grid gap-4 md:grid-cols-2 text-sm">
+                                    <div className="space-y-2">
                                       <div>
-                                        <p className="font-medium text-gray-900">Notes</p>
-                                        <p className="text-gray-600">{opp.notes}</p>
+                                        <p className="font-medium text-gray-900">Sponsorship URL</p>
+                                        <a
+                                          href={opp.sponsorship_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 hover:underline break-all"
+                                        >
+                                          {opp.sponsorship_url}
+                                        </a>
                                       </div>
-                                    )}
+                                      {opp.sponsor_page_url && (
+                                        <div>
+                                          <p className="font-medium text-gray-900">Sponsorship Page URL</p>
+                                          <a
+                                            href={opp.sponsor_page_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline break-all"
+                                          >
+                                            {opp.sponsor_page_url}
+                                          </a>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <p className="font-medium text-gray-900">Current Sponsors Displayed</p>
+                                        <p className="text-gray-600">{opp.current_sponsors_displayed || "Unknown"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-gray-900">Link Evidence</p>
+                                        <p className="text-gray-600">{opp.link_evidence || "Unknown"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-gray-900">Submission Method</p>
+                                        <p className="text-gray-600">{opp.submission_method || "Unknown"}</p>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <div>
+                                        <p className="font-medium text-gray-900">Contact</p>
+                                        <p className="text-gray-600">
+                                          {opp.contact_person || "N/A"} — {opp.contact_email || "N/A"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-gray-900">Site Quality Notes</p>
+                                        <p className="text-gray-600">{opp.freshness_notes || "None"}</p>
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-gray-900">Human Review Triggers</p>
+                                        <p className="text-gray-600">{opp.human_review_trigger || "None"}</p>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <p className="font-medium text-gray-900">Last Checked</p>
+                                          <p className="text-gray-600">{formatDate(opp.last_checked_at)}</p>
+                                        </div>
+                                        <div>
+                                          <p className="font-medium text-gray-900">Last Refreshed</p>
+                                          <p className="text-gray-600">{formatDate(opp.last_refreshed_at)}</p>
+                                        </div>
+                                      </div>
+                                      {opp.notes && (
+                                        <div>
+                                          <p className="font-medium text-gray-900">Notes</p>
+                                          <p className="text-gray-600">{opp.notes}</p>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -521,8 +747,8 @@ export default function Dashboard() {
                   {/* Pagination */}
                   <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
-                      Showing {opportunities.length > 0 ? offset + 1 : 0} to{" "}
-                      {Math.min(offset + limit, 999)} results
+                      Showing {opportunities.length > 0 ? currentPage * limit + 1 : 0} to{" "}
+                      {currentPage * limit + opportunities.length} results
                     </div>
                     <div className="space-x-2">
                       <button

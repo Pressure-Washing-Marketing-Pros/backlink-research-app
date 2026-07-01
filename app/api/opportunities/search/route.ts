@@ -15,14 +15,20 @@ export async function GET(request: Request) {
     const state = url.searchParams.get("state") || undefined;
     const search = url.searchParams.get("search") || undefined;
     const decision = url.searchParams.get("decision") || undefined;
+    const paymentType = url.searchParams.get("paymentType") || undefined;
+    const minDrParam = url.searchParams.get("minDr");
+    const maxDrParam = url.searchParams.get("maxDr");
+    const minDr = minDrParam ? Number(minDrParam) : undefined;
+    const maxDr = maxDrParam ? Number(maxDrParam) : undefined;
     const limit = parseInt(url.searchParams.get("limit") || "50");
     const offset = parseInt(url.searchParams.get("offset") || "0");
     const sortBy = (url.searchParams.get("sortBy") || "created") as "created" | "dr" | "traffic" | "score";
     const sortOrder = (url.searchParams.get("sortOrder") || "DESC") as "ASC" | "DESC";
 
-    // Handle special case: get cities and states
+    // Handle special case: get cities and states (optionally scoped to a state,
+    // so the city dropdown can be filtered to that state's locations)
     if (url.searchParams.get("getCitiesAndStates") === "true") {
-      const citiesAndStates = await getCitiesAndStates();
+      const citiesAndStates = await getCitiesAndStates(state);
       return Response.json(citiesAndStates);
     }
 
@@ -31,6 +37,9 @@ export async function GET(request: Request) {
       state,
       search,
       decision,
+      paymentType,
+      minDr,
+      maxDr,
       limit,
       offset,
       sortBy,

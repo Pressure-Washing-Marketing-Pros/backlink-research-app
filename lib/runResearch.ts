@@ -150,7 +150,7 @@ export async function runResearch(
 
   return {
     summary: {
-      client: inputs.client_business_name,
+      client: inputs.client_business_name || "General sponsorship research",
       target_city: inputs.client_primary_city,
       target_state: inputs.client_state,
       run_date: new Date().toISOString(),

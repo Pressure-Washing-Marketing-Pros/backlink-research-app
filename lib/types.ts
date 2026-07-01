@@ -102,6 +102,7 @@ export interface Opportunity {
   "Sponsor Page URL": string;
   City: string;
   State: string;
+  Location: string;
   "Local Relevance Rating": LocalRelevanceRating;
   "Local Relevance Notes": string;
   "Current Sponsors Displayed Publicly": YesNo | "Unknown";
@@ -126,6 +127,8 @@ export interface Opportunity {
   "Human Review Trigger": string;
   Score: number;
   "Search Query Used": string;
+  "Last Checked": string;
+  "Last Refreshed": string;
 }
 
 export interface RunSummary {

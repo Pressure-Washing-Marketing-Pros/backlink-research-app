@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sponsorship Backlink Research",
-  description: "Local sponsorship backlink research app with query bank preview and candidate tracking.",
+  title: "Sponsorship Researcher App",
+  description: "Discover, review, and manage sponsorship opportunities by location — query preview, review queue, and inventory export.",
 };
 
 export default function RootLayout({

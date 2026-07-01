@@ -12,40 +12,28 @@ import type {
   ValidationError,
 } from "@/lib/types";
 
+// Sponsorship research targets a location (city/state/county/metro), not a
+// client campaign — business/niche/landing-page fields have been removed
+// from the form. They're still accepted by the API for backward
+// compatibility but are no longer required or collected here.
 type FormState = {
-  client_business_name: string;
-  client_website_url: string;
   client_primary_city: string;
   client_state: string;
   state_abbrev: string;
   county: string;
   metro: string;
-  client_niche: string;
-  preferred_landing_page_url: string;
   maximum_approved_budget: string;
   budget_exceptions_allowed: "Yes" | "No";
-  service_area_cities: string;
-  nearby_cities_allowed: "Yes" | "No";
-  gbp_city: string;
-  client_outreach_email: string;
 };
 
 const INITIAL: FormState = {
-  client_business_name: "",
-  client_website_url: "",
   client_primary_city: "",
   client_state: "",
   state_abbrev: "",
   county: "",
   metro: "",
-  client_niche: "",
-  preferred_landing_page_url: "",
   maximum_approved_budget: "",
   budget_exceptions_allowed: "No",
-  service_area_cities: "",
-  nearby_cities_allowed: "No",
-  gbp_city: "",
-  client_outreach_email: "",
 };
 
 const DECISION_FILTERS: ("All" | Decision)[] = [
@@ -56,26 +44,14 @@ const DECISION_FILTERS: ("All" | Decision)[] = [
 ];
 
 function toClientInputs(form: FormState): Partial<ClientInputs> {
-  const cities = form.service_area_cities
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
   return {
-    client_business_name: form.client_business_name,
-    client_website_url: form.client_website_url,
     client_primary_city: form.client_primary_city,
     client_state: form.client_state,
-    client_niche: form.client_niche,
-    preferred_landing_page_url: form.preferred_landing_page_url,
     maximum_approved_budget: Number(form.maximum_approved_budget) || 0,
     budget_exceptions_allowed: form.budget_exceptions_allowed,
     state_abbrev: form.state_abbrev || undefined,
     county: form.county || undefined,
     metro: form.metro || undefined,
-    service_area_cities: cities.length > 0 ? cities : undefined,
-    nearby_cities_allowed: form.nearby_cities_allowed,
-    gbp_city: form.gbp_city || undefined,
-    client_outreach_email: form.client_outreach_email || undefined,
   };
 }
 
@@ -274,10 +250,10 @@ export default function Home() {
               />
               <div>
                 <h1 className="text-3xl font-bold text-slate-900">
-                  Backlink Research
+                  Sponsorship Researcher
                 </h1>
                 <p className="mt-1 text-sm text-slate-600">
-                  v1 (sync, no crawl) — SERP discovery + Ahrefs metrics + HTTPS auto-reject.
+                  Find and qualify local sponsorship opportunities by location — SERP discovery + DR lookup + sponsorship-page review.
                 </p>
               </div>
             </div>
@@ -285,7 +261,7 @@ export default function Home() {
               href="/dashboard"
               className="rounded-md bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors"
             >
-              View Inventory
+              View Sponsorship Inventory
             </a>
           </div>
         </header>
@@ -328,24 +304,7 @@ export default function Home() {
           onSubmit={onSubmit}
           className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2"
         >
-          <Field label="Business name *">
-            <input
-              required
-              value={form.client_business_name}
-              onChange={(e) => update("client_business_name", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Website URL *">
-            <input
-              required
-              type="url"
-              value={form.client_website_url}
-              onChange={(e) => update("client_website_url", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Primary city *">
+          <Field label="Target city *">
             <input
               required
               value={form.client_primary_city}
@@ -353,7 +312,7 @@ export default function Home() {
               className={inputClass}
             />
           </Field>
-          <Field label="State *">
+          <Field label="Target state *">
             <input
               required
               value={form.client_state}
@@ -382,25 +341,7 @@ export default function Home() {
               className={inputClass}
             />
           </Field>
-          <Field label="Niche *">
-            <input
-              required
-              placeholder="e.g. pressure washing"
-              value={form.client_niche}
-              onChange={(e) => update("client_niche", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Preferred landing page URL *">
-            <input
-              required
-              type="url"
-              value={form.preferred_landing_page_url}
-              onChange={(e) => update("preferred_landing_page_url", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Max approved budget ($) *">
+          <Field label="Likely budget ceiling ($) *">
             <input
               required
               type="number"
@@ -421,41 +362,6 @@ export default function Home() {
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
-          </Field>
-          <Field label="Service area cities (comma-separated)">
-            <input
-              value={form.service_area_cities}
-              onChange={(e) => update("service_area_cities", e.target.value)}
-              placeholder="Leland, Hampstead, Carolina Beach"
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Nearby cities allowed (runs Class 4 queries)">
-            <select
-              value={form.nearby_cities_allowed}
-              onChange={(e) =>
-                update("nearby_cities_allowed", e.target.value as "Yes" | "No")
-              }
-              className={inputClass}
-            >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
-          </Field>
-          <Field label="GBP city">
-            <input
-              value={form.gbp_city}
-              onChange={(e) => update("gbp_city", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Outreach email">
-            <input
-              type="email"
-              value={form.client_outreach_email}
-              onChange={(e) => update("client_outreach_email", e.target.value)}
-              className={inputClass}
-            />
           </Field>
 
           <div className="md:col-span-2 grid gap-3 lg:grid-cols-[auto_1fr] lg:items-center">

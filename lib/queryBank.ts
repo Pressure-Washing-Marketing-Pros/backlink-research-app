@@ -120,24 +120,36 @@ export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
   return rendered;
 }
 
+// Sponsorship research targets a location, not a specific client campaign —
+// only the target city/state are required to render queries and run research.
 export function validateInputs(
   inputs: Partial<ClientInputs>,
 ): { ok: true; inputs: ClientInputs } | { ok: false; missing: string[] } {
-  const required: (keyof ClientInputs)[] = [
-    "client_business_name",
-    "client_website_url",
-    "client_primary_city",
-    "client_state",
-    "client_niche",
-    "preferred_landing_page_url",
-    "maximum_approved_budget",
-    "budget_exceptions_allowed",
-  ];
+  const required: (keyof ClientInputs)[] = ["client_primary_city", "client_state"];
   const missing: string[] = [];
   for (const k of required) {
     const v = inputs[k];
     if (v === undefined || v === null || v === "") missing.push(k);
   }
   if (missing.length > 0) return { ok: false, missing };
-  return { ok: true, inputs: inputs as ClientInputs };
+
+  const filled: ClientInputs = {
+    client_business_name: inputs.client_business_name ?? "",
+    client_website_url: inputs.client_website_url ?? "",
+    client_primary_city: inputs.client_primary_city!,
+    client_state: inputs.client_state!,
+    client_niche: inputs.client_niche ?? "",
+    preferred_landing_page_url: inputs.preferred_landing_page_url ?? "",
+    maximum_approved_budget: inputs.maximum_approved_budget ?? 0,
+    budget_exceptions_allowed: inputs.budget_exceptions_allowed ?? "No",
+    state_abbrev: inputs.state_abbrev,
+    county: inputs.county,
+    metro: inputs.metro,
+    service_area_cities: inputs.service_area_cities,
+    nearby_cities_allowed: inputs.nearby_cities_allowed,
+    gbp_city: inputs.gbp_city,
+    ownership_tags: inputs.ownership_tags,
+    client_outreach_email: inputs.client_outreach_email,
+  };
+  return { ok: true, inputs: filled };
 }
