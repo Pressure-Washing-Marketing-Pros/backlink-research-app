@@ -90,16 +90,33 @@ export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
 
   const date = today();
   const target = encodeURIComponent(domain);
+  const drPathWithDate = `/site-explorer/domain-rating?target=${target}&mode=domain&date=${date}`;
+  const metricsPathWithDate = `/site-explorer/metrics?target=${target}&mode=domain&date=${date}`;
+  const drPathNoDate = `/site-explorer/domain-rating?target=${target}&mode=domain`;
+  const metricsPathNoDate = `/site-explorer/metrics?target=${target}&mode=domain`;
 
   try {
-    const [drJson, metricsJson] = await Promise.all([
-      ahrefsGet(`/site-explorer/domain-rating?target=${target}&mode=domain&date=${date}`).catch(
-        (e: Error) => ({ __error: e.message }),
-      ),
-      ahrefsGet(`/site-explorer/metrics?target=${target}&mode=domain&date=${date}`).catch(
-        (e: Error) => ({ __error: e.message }),
-      ),
+    let [drJson, metricsJson] = await Promise.all([
+      ahrefsGet(drPathWithDate).catch((e: Error) => ({ __error: e.message })),
+      ahrefsGet(metricsPathWithDate).catch((e: Error) => ({ __error: e.message })),
     ]);
+
+    // Some domains/date snapshots fail for "today" even though Ahrefs has
+    // data. Retry once without date to fetch the latest available snapshot.
+    const drFailed = drJson && typeof drJson === "object" && "__error" in drJson;
+    const metricsFailed = metricsJson && typeof metricsJson === "object" && "__error" in metricsJson;
+    if (drFailed || metricsFailed) {
+      const [drNoDate, metricsNoDate] = await Promise.all([
+        drFailed
+          ? ahrefsGet(drPathNoDate).catch((e: Error) => ({ __error: e.message }))
+          : Promise.resolve(drJson),
+        metricsFailed
+          ? ahrefsGet(metricsPathNoDate).catch((e: Error) => ({ __error: e.message }))
+          : Promise.resolve(metricsJson),
+      ]);
+      drJson = drNoDate;
+      metricsJson = metricsNoDate;
+    }
 
     const dr = pickNumber(drJson, ["domain_rating"]);
     const organic_traffic = pickNumber(metricsJson, [
