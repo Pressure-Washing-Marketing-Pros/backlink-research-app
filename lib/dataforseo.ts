@@ -7,6 +7,7 @@ interface DataForSeoOrganicItem {
   rank_absolute?: number;
   url?: string;
   title?: string;
+  description?: string;
   domain?: string;
 }
 
@@ -106,6 +107,7 @@ export async function serpQuery(opts: SerpQueryOptions): Promise<SerpResult[]> {
       url: it.url,
       root_domain: rootDomain(it.url),
       rank: it.rank_absolute ?? it.rank_group ?? 0,
+      snippet: it.description ?? "",
       search_query_used: opts.query,
       target_city: opts.target_city,
       target_state: opts.target_state,

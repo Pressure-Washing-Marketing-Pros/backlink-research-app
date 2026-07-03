@@ -47,6 +47,8 @@ export interface SerpResult {
   url: string;
   root_domain: string;
   rank: number;
+  /** SERP result description/snippet — used by the pre-filter. */
+  snippet: string;
   search_query_used: string;
   target_city: string;
   target_state: string;
@@ -94,6 +96,43 @@ export type Decision = "Approve" | "Reject" | "Needs Human Review";
 export type ApprovalStatus = "approved" | "review" | "rejected";
 
 /**
+ * What the scraped page actually IS. Only the first four are eligible for
+ * approval — everything else is rejected or reviewed, never approved.
+ */
+export type PagePurpose =
+  | "SponsorshipOpportunityPage"
+  | "SponsorPacketOrForm"
+  | "DonationOrPartnerPage"
+  | "VendorOrExhibitorOpportunityPage"
+  | "CurrentSponsorsOnlyPage"
+  | "BlogArticle"
+  | "NewsArticle"
+  | "TravelOrReviewPage"
+  | "JobPosting"
+  | "ForumThread"
+  | "SocialMediaPage"
+  | "GenericEventPage"
+  | "TicketOrRegistrationPage"
+  | "DirectoryListing"
+  | "Unknown";
+
+export type RejectionCategory =
+  | "Blog/article result"
+  | "Travel/review result"
+  | "Job/visa sponsorship result"
+  | "Forum/social result"
+  | "Generic event/ticket result"
+  | "Current sponsors only"
+  | "No sponsorship opportunity language"
+  | "No backlink evidence"
+  | "No pricing found"
+  | "Over budget"
+  | "DR below threshold"
+  | "Low local relevance"
+  | "Firecrawl failed"
+  | "Unknown";
+
+/**
  * Internal per-URL analysis produced by the strict scrape-and-match layer
  * (Ahrefs DR gate → Firecrawl scrape → keyword/price matching). Attached to
  * each Opportunity as `_analysis`; not part of the CSV export columns.
@@ -114,6 +153,8 @@ export interface PageAnalysis {
   detectedPrices: number[];
   lowestDetectedPrice: number | null;
   withinBudget: boolean | null;
+  pagePurpose: PagePurpose;
+  rejectionCategory: RejectionCategory | null;
   approvalStatus: ApprovalStatus;
   approvalReason: string;
   analyzedAt: string;
@@ -124,7 +165,7 @@ export interface PipelineStats {
   serp_results: number;
   after_dedup: number;
   non_https: number;
-  spam_rejected: number;
+  prefilter_rejected: number;
   dr_passed: number;
   dr_rejected: number;
   dr_unavailable: number;

@@ -1,15 +1,18 @@
 // Rule-based validation cases for the strict sponsorship page analyzer.
 // Run with: npm test   (or: npx tsx scripts/validateAnalysis.ts)
 //
-// These cover the strict status logic, price detection (including the
-// year-vs-price guard), keyword matching, crawl-cache freshness, and URL
-// normalization — all pure functions with no network or database access.
+// Includes regression cases built from the real 2026-07-03 Fort Lauderdale
+// run, where blog posts, TripAdvisor pages, job listings, forums, and ticket
+// pages leaked through — those must all be rejected now.
 import assert from "node:assert/strict";
 import {
+  PAGE_PURPOSE_SCORE_CAPS,
   analyzeContent,
+  classifyPagePurpose,
   decideStatus,
   detectPrices,
   matchTerms,
+  preFilterSerpResult,
 } from "../lib/pageAnalysis";
 import { isCrawlCacheFresh } from "../lib/sponsorshipConfig";
 import { normalizeUrl } from "../lib/urlNormalize";
@@ -35,10 +38,193 @@ const base = {
   pricingTerms: [] as string[],
   prices: [] as number[],
   lowestPrice: null as number | null,
+  pagePurpose: "SponsorshipOpportunityPage" as const,
+  localRelevance: "High" as const,
 };
 
+console.log("Pre-filter (regressions from the 2026-07-03 Fort Lauderdale run):");
+check("tripadvisor.com tourism page → rejected before any API spend", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.tripadvisor.com/Tourism-g34227-Fort_Lauderdale_Broward_County_Florida-Vacations.html",
+    title: "Fort Lauderdale, FL: All You Must Know Before ...",
+    domain: "tripadvisor.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Travel/review result");
+});
+check("Eventbrite blog article about getting sponsors → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.eventbrite.com/blog/guide-to-event-sponsorship-ds00/",
+    title: "How to Get Sponsors for an Event: Tips from Industry Pros",
+    domain: "eventbrite.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Blog/article result");
+});
+check("careers page → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://careers.browardhealth.org/us/en/job/BHPBHQUS26627EXTERNALENUS/Community-Relations-Specialist",
+    title: "Community Relations Specialist in Fort Lauderdale, FL, US",
+    domain: "careers.browardhealth.org",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Job/visa sponsorship result");
+});
+check("visa sponsorship job listing → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://jobtoday.com/us/jobs-visa-sponsorship/fl_fort-lauderdale",
+    title: "87 Best visa sponsorship Jobs in Fort Lauderdale, Florida ...",
+    domain: "jobtoday.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Job/visa sponsorship result");
+});
+check("reddit forum thread → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.reddit.com/r/FRC/comments/4dgc25/how_to_start_a_first_lego_league_team",
+    title: "How to start a First Lego League Team? : r/FRC",
+    domain: "reddit.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Forum/social result");
+});
+check("LinkedIn Pulse article → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.linkedin.com/pulse/how-our-community-sponsors-inspire-central-xuoof",
+    title: "How Our Community Sponsors Inspire Central Florida ...",
+    domain: "linkedin.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Forum/social result");
+});
+check("generic event ticket page → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.tixr.com/groups/redbullgrc/events/round-1-fort-lauderdale-1071",
+    title: "Round 1: Fort Lauderdale tickets by Red Bull GRC",
+    domain: "tixr.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Generic event/ticket result");
+});
+check('"Meet Our Sponsors" title with no opportunity signal → rejected', () => {
+  const v = preFilterSerpResult({
+    url: "https://fpea.com/events/6001/2022-fpea-florida-homeschool-convention/meet-our-sponsors",
+    title: "Meet Our Sponsors",
+    domain: "fpea.com",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Current sponsors only");
+});
+check("news article → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://nsunews.nova.edu/sharkbytes/community-news/page/43/index.html",
+    title: "Community News | NSU Newsroom - Part 43",
+    domain: "nsunews.nova.edu",
+  });
+  assert.equal(v.pass, false);
+  assert.equal(v.category, "Blog/article result");
+});
+check("official Sponsorship Opportunities page → passes pre-filter", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.acg.org/southflorida/sponsorship/sponsorship-opportunities",
+    title: "Sponsorship Opportunities | ACG South Florida",
+    domain: "acg.org",
+  });
+  assert.equal(v.pass, true);
+});
+check("race sponsor page → passes pre-filter", () => {
+  const v = preFilterSerpResult({
+    url: "https://runsignup.com/Race/Sponsors/FL/FortLauderdale/FortLauderdale131",
+    title: "The 20th Annual Liquid Youth Fort Lauderdale Running ...",
+    domain: "runsignup.com",
+  });
+  assert.equal(v.pass, true);
+});
+check("PDF sponsorship packet → passes pre-filter", () => {
+  const v = preFilterSerpResult({
+    url: "https://cdn.ymaws.com/www.bioflorida.com/resource/resmgr/2026_conference/2026_sponsorship_prospectus_.pdf",
+    title: "Sponsorship Opportunities",
+    domain: "cdn.ymaws.com",
+  });
+  assert.equal(v.pass, true);
+});
+check("unrelated PDF (housing policy) → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://selc.wordpress.ncsu.edu/files/2013/03/Rethinking-Federal-Housing-Policy.pdf",
+    title: "Rethinking Federal Housing Policy",
+    domain: "selc.wordpress.ncsu.edu",
+  });
+  assert.equal(v.pass, false);
+});
+check("job board domain (ziprecruiter) → rejected", () => {
+  const v = preFilterSerpResult({
+    url: "https://www.ziprecruiter.com/jobs/fort-lauderdale",
+    title: "Jobs in Fort Lauderdale",
+    domain: "ziprecruiter.com",
+  });
+  assert.equal(v.pass, false);
+});
+
+console.log("Page purpose classifier:");
+check("blog URL is BlogArticle even when content has opportunity phrases", () => {
+  const p = classifyPagePurpose(
+    "https://www.eventbrite.com/blog/guide-to-event-sponsorship-ds00/",
+    "How to Get Sponsors for an Event",
+    "Sponsorship opportunities are everywhere. To become a sponsor magnet, offer sponsorship packages...",
+  );
+  assert.equal(p, "BlogArticle");
+});
+check('"become a sponsor" page with packages → SponsorshipOpportunityPage', () => {
+  const p = classifyPagePurpose(
+    "https://example.org/sponsorship",
+    "Become a Sponsor",
+    "Become a sponsor of our festival! Sponsorship packages start at $250. Sponsor benefits include your logo with link on our website.",
+  );
+  assert.equal(p, "SponsorshipOpportunityPage");
+});
+check("PDF packet with opportunity language → SponsorPacketOrForm", () => {
+  const p = classifyPagePurpose(
+    "https://example.org/files/2026-sponsorship-packet.pdf",
+    "2026 Sponsorship Packet",
+    "Sponsorship opportunities for 2026. Gold sponsor $1,000. Complete the sponsor application to reserve.",
+  );
+  assert.equal(p, "SponsorPacketOrForm");
+});
+check("vendor/exhibitor page → VendorOrExhibitorOpportunityPage", () => {
+  const p = classifyPagePurpose(
+    "https://example.org/get-involved",
+    "Get Involved",
+    "Vendor opportunities available! Booth fee is $200 and exhibitor opportunities include recognition on our website.",
+  );
+  assert.equal(p, "VendorOrExhibitorOpportunityPage");
+});
+check('"thank you to our sponsors" only → CurrentSponsorsOnlyPage', () => {
+  const p = classifyPagePurpose(
+    "https://example.org/sponsors",
+    "Our Sponsors",
+    "Thank you to our sponsors! This event was sponsored by Acme Co and presented by Beta Corp.",
+  );
+  assert.equal(p, "CurrentSponsorsOnlyPage");
+});
+check("social URL → SocialMediaPage", () => {
+  const p = classifyPagePurpose(
+    "https://www.instagram.com/reel/DZvWqA8sFNr",
+    "Weekly sponsor shout-out",
+    "become a sponsor",
+  );
+  assert.equal(p, "SocialMediaPage");
+});
+check("no sponsor language at all → Unknown", () => {
+  const p = classifyPagePurpose(
+    "https://example.org/about",
+    "About Us",
+    "We are a community organization founded in 1998 serving the local area.",
+  );
+  assert.equal(p, "Unknown");
+});
+
 console.log("Strict status logic:");
-check("DR 30 + sponsorship term + link evidence + $250 → approved", () => {
+check("real opportunity page + DR 30 + link evidence + $250 + local → approved", () => {
   const d = decideStatus({
     ...base,
     dr: 30,
@@ -49,9 +235,52 @@ check("DR 30 + sponsorship term + link evidence + $250 → approved", () => {
     lowestPrice: 250,
   });
   assert.equal(d.approvalStatus, "approved");
-  assert.ok(d.approvalReason.includes("$250"));
+  assert.equal(d.rejectionCategory, null);
 });
-check("DR 30 + sponsorship + $250 but no backlink term → review", () => {
+check("BlogArticle with perfect signals → rejected, never approved", () => {
+  const d = decideStatus({
+    ...base,
+    dr: 94,
+    pagePurpose: "BlogArticle",
+    sponsorshipTerms: ["sponsorship"],
+    backlinkTerms: ["sponsor page"],
+    prices: [1],
+    lowestPrice: 1,
+  });
+  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "Blog/article result");
+});
+check("TravelOrReviewPage → rejected", () => {
+  const d = decideStatus({ ...base, dr: 93, pagePurpose: "TravelOrReviewPage" });
+  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "Travel/review result");
+});
+check("JobPosting → rejected", () => {
+  const d = decideStatus({ ...base, dr: 65, pagePurpose: "JobPosting" });
+  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "Job/visa sponsorship result");
+});
+check("CurrentSponsorsOnlyPage → rejected", () => {
+  const d = decideStatus({ ...base, dr: 50, pagePurpose: "CurrentSponsorsOnlyPage" });
+  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "Current sponsors only");
+});
+check("Unknown purpose → rejected (no opportunity language)", () => {
+  const d = decideStatus({ ...base, dr: 30, pagePurpose: "Unknown" });
+  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "No sponsorship opportunity language");
+});
+check("opportunity page but no price → review (No pricing found)", () => {
+  const d = decideStatus({
+    ...base,
+    dr: 30,
+    sponsorshipTerms: ["sponsor"],
+    backlinkTerms: ["sponsor logo"],
+  });
+  assert.equal(d.approvalStatus, "review");
+  assert.equal(d.rejectionCategory, "No pricing found");
+});
+check("opportunity page but no link evidence → review (No backlink evidence)", () => {
   const d = decideStatus({
     ...base,
     dr: 30,
@@ -60,17 +289,22 @@ check("DR 30 + sponsorship + $250 but no backlink term → review", () => {
     lowestPrice: 250,
   });
   assert.equal(d.approvalStatus, "review");
+  assert.equal(d.rejectionCategory, "No backlink evidence");
 });
-check("DR 30 + sponsorship + backlink term but no price → review", () => {
+check("opportunity page but local relevance unknown → review (Low local relevance)", () => {
   const d = decideStatus({
     ...base,
     dr: 30,
+    localRelevance: "Unknown",
     sponsorshipTerms: ["sponsor"],
-    backlinkTerms: ["sponsor logo"],
+    backlinkTerms: ["website link"],
+    prices: [250],
+    lowestPrice: 250,
   });
   assert.equal(d.approvalStatus, "review");
+  assert.equal(d.rejectionCategory, "Low local relevance");
 });
-check("DR 20 + all page criteria matched → rejected (below DR 25)", () => {
+check("DR 20 + everything matched → rejected (below DR 25)", () => {
   const d = decideStatus({
     ...base,
     dr: 20,
@@ -80,13 +314,9 @@ check("DR 20 + all page criteria matched → rejected (below DR 25)", () => {
     lowestPrice: 250,
   });
   assert.equal(d.approvalStatus, "rejected");
-  assert.ok(d.approvalReason.includes("below the minimum"));
+  assert.equal(d.rejectionCategory, "DR below threshold");
 });
-check("DR 30 + no sponsorship terms → rejected", () => {
-  const d = decideStatus({ ...base, dr: 30 });
-  assert.equal(d.approvalStatus, "rejected");
-});
-check("DR 30 + sponsorship + backlink + only $500 (budget $300) → never approved", () => {
+check("only $500 (budget $300) → rejected, never approved", () => {
   const d = decideStatus({
     ...base,
     dr: 30,
@@ -96,28 +326,31 @@ check("DR 30 + sponsorship + backlink + only $500 (budget $300) → never approv
     lowestPrice: 500,
   });
   assert.notEqual(d.approvalStatus, "approved");
-  assert.equal(d.approvalStatus, "rejected"); // all prices above budget
+  assert.equal(d.rejectionCategory, "Over budget");
 });
 check("Firecrawl failure → review, never approved", () => {
   const d = decideStatus({ ...base, dr: 40, firecrawlStatus: "failed" });
   assert.equal(d.approvalStatus, "review");
-});
-check("Spam/job-board domain → rejected", () => {
-  const d = decideStatus({
-    ...base,
-    dr: 50,
-    spamDomain: true,
-    sponsorshipTerms: ["sponsor"],
-  });
-  assert.equal(d.approvalStatus, "rejected");
+  assert.equal(d.rejectionCategory, "Firecrawl failed");
 });
 check("DR unavailable → review", () => {
   const d = decideStatus({ ...base, dr: null });
   assert.equal(d.approvalStatus, "review");
 });
-check("Very short scraped content → review", () => {
+check("very short scraped content → review", () => {
   const d = decideStatus({ ...base, dr: 30, contentLength: 50 });
   assert.equal(d.approvalStatus, "review");
+});
+
+console.log("Score caps:");
+check("non-opportunity purposes are capped low", () => {
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.JobPosting, 0);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.TravelOrReviewPage, 10);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.BlogArticle, 20);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.GenericEventPage, 30);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.CurrentSponsorsOnlyPage, 35);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.Unknown, 40);
+  assert.equal(PAGE_PURPOSE_SCORE_CAPS.SponsorshipOpportunityPage, 100);
 });
 
 console.log("Price detection:");

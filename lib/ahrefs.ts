@@ -13,7 +13,7 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function ahrefsGet(pathAndQuery: string): Promise<unknown> {
+async function ahrefsGet(pathAndQuery: string, attempt = 0): Promise<unknown> {
   const res = await fetch(`${BASE}${pathAndQuery}`, {
     method: "GET",
     headers: {
@@ -21,6 +21,12 @@ async function ahrefsGet(pathAndQuery: string): Promise<unknown> {
       Accept: "application/json",
     },
   });
+  // Ahrefs rate-limits aggressively; one retry after a short backoff clears
+  // most transient 429s (also keep caller concurrency low).
+  if (res.status === 429 && attempt < 2) {
+    await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
+    return ahrefsGet(pathAndQuery, attempt + 1);
+  }
   if (!res.ok) {
     throw new Error(`Ahrefs HTTP ${res.status}: ${await res.text().catch(() => "")}`);
   }

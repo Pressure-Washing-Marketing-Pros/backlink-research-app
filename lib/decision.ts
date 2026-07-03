@@ -22,7 +22,7 @@ function containsCaseInsensitive(haystack: string, needle: string): boolean {
   return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
-function classifyLocalRelevance(
+export function classifyLocalRelevance(
   serp: SerpResult,
   inputs: ClientInputs,
 ): { rating: LocalRelevanceRating; notes: string } {

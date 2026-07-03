@@ -2,6 +2,7 @@ import "server-only";
 import { domainMetricsBatch } from "@/lib/ahrefs";
 import {
   buildOpportunity,
+  classifyLocalRelevance,
   detectSensitiveCategory,
   isHttps,
 } from "@/lib/decision";
@@ -13,8 +14,11 @@ import {
 } from "@/lib/crawl";
 import { scrapeUrl } from "@/lib/firecrawl";
 import {
+  PAGE_PURPOSE_SCORE_CAPS,
   analyzeContent,
+  classifyPagePurpose,
   decideStatus,
+  preFilterSerpResult,
   type ContentAnalysis,
   type StrictDecision,
 } from "@/lib/pageAnalysis";
@@ -28,7 +32,6 @@ import {
   DEFAULT_CLIENT_BUDGET,
   DR_MINIMUM,
   FIRECRAWL_CONCURRENCY,
-  SPAM_DOMAIN_PATTERN,
   isCrawlCacheFresh,
   maxFirecrawlUrlsPerRun,
 } from "@/lib/sponsorshipConfig";
@@ -40,6 +43,7 @@ import type {
   Decision,
   Opportunity,
   PageAnalysis,
+  PagePurpose,
   RunResult,
   SerpResult,
   SponsorshipCrawlResult,
@@ -48,7 +52,8 @@ import type {
 
 const MAX_CANDIDATES_PER_QUERY = 30;
 const SERP_CONCURRENCY = 3;
-const AHREFS_CONCURRENCY = 5;
+// Kept low — Ahrefs rate-limits hard (HTTP 429) at higher parallelism.
+const AHREFS_CONCURRENCY = 2;
 const SCRAPED_TEXT_PREVIEW_CHARS = 2000;
 
 function log(message: string): void {
@@ -225,18 +230,23 @@ function resolveFinal(
   serp: SerpResult,
   crawl: SponsorshipCrawlResult,
   strict: StrictDecision,
-): { status: ApprovalStatus; reason: string } {
+): { status: ApprovalStatus; reason: string; category: StrictDecision["rejectionCategory"] } {
   if (strict.approvalStatus !== "approved") {
-    return { status: strict.approvalStatus, reason: strict.approvalReason };
+    return {
+      status: strict.approvalStatus,
+      reason: strict.approvalReason,
+      category: strict.rejectionCategory,
+    };
   }
   const sensitive = detectSensitiveCategory(serp, crawl);
   if (sensitive) {
     return {
       status: "review",
       reason: `Review: sensitive category detected (${sensitive}) — client approval recommended before purchase. ${strict.approvalReason}`,
+      category: null,
     };
   }
-  return { status: "approved", reason: strict.approvalReason };
+  return { status: "approved", reason: strict.approvalReason, category: null };
 }
 
 interface RowArgs {
@@ -247,7 +257,7 @@ interface RowArgs {
   strict: StrictDecision;
   analysisBase: Omit<
     PageAnalysis,
-    "approvalStatus" | "approvalReason" | "analyzedAt" | "withinBudget"
+    "approvalStatus" | "approvalReason" | "analyzedAt" | "withinBudget" | "rejectionCategory"
   >;
 }
 
@@ -262,11 +272,16 @@ function buildRow(args: RowArgs): Opportunity {
   opp.Decision = decision;
   opp["Human Review Trigger"] = decision === "Approve" ? "None" : final.reason;
   opp.Notes = `${final.reason} ${opp.Notes}`.trim();
+
+  // Non-opportunity page purposes never rank high, whatever their DR.
+  const cap = PAGE_PURPOSE_SCORE_CAPS[args.analysisBase.pagePurpose] ?? 100;
+  opp.Score = Math.min(opp.Score, cap);
   if (decision === "Reject") opp.Score = 0;
 
   opp._analysis = {
     ...args.analysisBase,
     withinBudget: strict.withinBudget,
+    rejectionCategory: final.category,
     approvalStatus: final.status,
     approvalReason: final.reason,
     analyzedAt: new Date().toISOString(),
@@ -319,17 +334,31 @@ export async function runResearch(
   }
   log(`${candidates.length} candidates after domain + URL deduplication`);
 
+  // 3. Pre-filter on URL/title/snippet/domain — social, travel, blogs, jobs,
+  //    forums, tickets etc. are hard-rejected before Ahrefs or Firecrawl.
   const nonHttps: Candidate[] = [];
-  const spam: Candidate[] = [];
+  const prefiltered: Array<{ candidate: Candidate; reason: string; category: StrictDecision["rejectionCategory"] }> = [];
   const clean: Candidate[] = [];
   for (const c of candidates) {
-    if (!isHttps(c.serp.url)) nonHttps.push(c);
-    else if (SPAM_DOMAIN_PATTERN.test(`${c.serp.root_domain} ${c.serp.url}`)) spam.push(c);
-    else clean.push(c);
+    if (!isHttps(c.serp.url)) {
+      nonHttps.push(c);
+      continue;
+    }
+    const pf = preFilterSerpResult({
+      url: c.serp.url,
+      title: c.serp.title,
+      snippet: c.serp.snippet,
+      domain: c.serp.root_domain,
+    });
+    if (!pf.pass) {
+      prefiltered.push({ candidate: c, reason: pf.reason, category: pf.category });
+    } else {
+      clean.push(c);
+    }
   }
-  if (spam.length > 0) log(`${spam.length} rejected as job-board/coupon/directory domains (no API spend)`);
+  log(`Pre-filter: ${prefiltered.length} rejected (never sponsorship opportunities), ${clean.length} continue to Ahrefs`);
 
-  // 3. Ahrefs DR gate — before Firecrawl, to save scrape credits
+  // 4. Ahrefs DR gate — before Firecrawl, to save scrape credits
   const uniqueDomains = Array.from(new Set(clean.map((c) => c.serp.root_domain)));
   const metricsMap = await domainMetricsBatch(uniqueDomains, AHREFS_CONCURRENCY);
   const metricsFor = (c: Candidate): AhrefsMetrics =>
@@ -348,7 +377,7 @@ export async function runResearch(
     `Ahrefs DR gate: ${passedDr.length} passed (DR >= ${DR_MINIMUM}), ${belowDr.length} rejected below threshold, ${drUnknown.length} DR unavailable (review, not scraped)`,
   );
 
-  // 4. Per-run Firecrawl cap — highest DR first
+  // 5. Per-run Firecrawl cap — highest DR first
   passedDr.sort((a, b) => (metricsFor(b).dr ?? 0) - (metricsFor(a).dr ?? 0));
   const cap = maxFirecrawlUrlsPerRun();
   const toScrape = passedDr.slice(0, cap);
@@ -357,7 +386,7 @@ export async function runResearch(
     log(`Per-run Firecrawl cap (${cap}) reached — ${overCap.length} qualified URLs marked for review without scraping`);
   }
 
-  // 5. Cache lookup (degrades gracefully if the DB is unavailable)
+  // 6. Cache lookup (degrades gracefully if the DB is unavailable)
   let cacheMap = new Map<string, CrawlCacheEntry>();
   try {
     cacheMap = await getCachedCrawls(toScrape.map((c) => c.key));
@@ -365,7 +394,7 @@ export async function runResearch(
     log(`Crawl cache unavailable (${e instanceof Error ? e.message : "error"}) — proceeding without cache`);
   }
 
-  // 6. Firecrawl scrape at free-plan concurrency, one retry, cache writes
+  // 7. Firecrawl scrape at free-plan concurrency, one retry, cache writes
   const nowSec = Math.floor(Date.now() / 1000);
   let cacheHits = 0;
   let scrapeOk = 0;
@@ -422,7 +451,7 @@ export async function runResearch(
   );
   log(`Firecrawl: ${scrapeOk} scraped, ${scrapeFail} failed, ${cacheHits} served from cache`);
 
-  // 7. Strict content analysis → opportunities
+  // 8. Page-purpose classification + strict analysis → opportunities
   const opportunities: Opportunity[] = [];
 
   for (const out of outcomes) {
@@ -433,11 +462,19 @@ export async function runResearch(
       : out.fromCache
         ? ("cached" as const)
         : ("success" as const);
+    const pagePurpose = classifyPagePurpose(
+      out.finalUrl || out.candidate.serp.url,
+      out.title || out.candidate.serp.title,
+      out.text,
+    );
+    const { rating: localRelevance } = classifyLocalRelevance(out.candidate.serp, inputs);
     const strict = decideStatus({
       dr: metrics.dr,
       budget,
       firecrawlStatus,
       contentLength: out.text.length,
+      pagePurpose,
+      localRelevance,
       ...content,
     });
     const crawl = crawlFromScrape(out, inputs, content);
@@ -462,18 +499,20 @@ export async function runResearch(
           matchedPricingTerms: content.pricingTerms,
           detectedPrices: content.prices,
           lowestDetectedPrice: content.lowestPrice,
+          pagePurpose,
           crawlCached: out.fromCache,
         },
       }),
     );
   }
 
-  // 8. Non-scraped groups still get rows so nothing silently disappears
+  // 9. Non-scraped groups still get rows so nothing silently disappears
   const pushUnscraped = (
     c: Candidate,
     metrics: AhrefsMetrics,
     strict: StrictDecision,
     crawl: SponsorshipCrawlResult,
+    pagePurpose: PagePurpose,
   ): void => {
     opportunities.push(
       buildRow({
@@ -496,11 +535,16 @@ export async function runResearch(
           matchedPricingTerms: [],
           detectedPrices: [],
           lowestDetectedPrice: null,
+          pagePurpose,
           crawlCached: false,
         },
       }),
     );
   };
+
+  // URL/title-only purpose guess for rows that were never scraped
+  const purposeOf = (c: Candidate): PagePurpose =>
+    classifyPagePurpose(c.serp.url, c.serp.title, "");
 
   const baseStrictInput = {
     budget,
@@ -508,42 +552,50 @@ export async function runResearch(
     firecrawlStatus: "skipped" as const,
     ...EMPTY_CONTENT,
   };
+  for (const { candidate: c, reason, category } of prefiltered) {
+    pushUnscraped(
+      c,
+      NULL_METRICS,
+      {
+        approvalStatus: "rejected",
+        approvalReason: `Rejected: ${reason}.`,
+        withinBudget: null,
+        rejectionCategory: category,
+      },
+      unscrapedCrawl(c.serp, `Pre-filtered before any API spend: ${reason}.`, "No Link Opportunity"),
+      purposeOf(c),
+    );
+  }
   for (const c of overCap) {
     const metrics = metricsFor(c);
+    const { rating } = classifyLocalRelevance(c.serp, inputs);
     pushUnscraped(
       c,
       metrics,
-      decideStatus({ ...baseStrictInput, dr: metrics.dr }),
+      decideStatus({ ...baseStrictInput, dr: metrics.dr, pagePurpose: purposeOf(c), localRelevance: rating }),
       unscrapedCrawl(c.serp, "Not scraped this run: per-run Firecrawl cap reached."),
+      purposeOf(c),
     );
   }
   for (const c of drUnknown) {
+    const { rating } = classifyLocalRelevance(c.serp, inputs);
     pushUnscraped(
       c,
       metricsFor(c),
-      decideStatus({ ...baseStrictInput, dr: null }),
+      decideStatus({ ...baseStrictInput, dr: null, pagePurpose: purposeOf(c), localRelevance: rating }),
       unscrapedCrawl(c.serp, "Not scraped: Ahrefs DR unavailable."),
+      purposeOf(c),
     );
   }
   for (const c of belowDr) {
     const metrics = metricsFor(c);
+    const { rating } = classifyLocalRelevance(c.serp, inputs);
     pushUnscraped(
       c,
       metrics,
-      decideStatus({ ...baseStrictInput, dr: metrics.dr }),
+      decideStatus({ ...baseStrictInput, dr: metrics.dr, pagePurpose: purposeOf(c), localRelevance: rating }),
       unscrapedCrawl(c.serp, "Not scraped: domain is below the DR threshold."),
-    );
-  }
-  for (const c of spam) {
-    pushUnscraped(
-      c,
-      NULL_METRICS,
-      decideStatus({ ...baseStrictInput, dr: null, spamDomain: true }),
-      unscrapedCrawl(
-        c.serp,
-        "Not scraped: domain matches job-board/coupon/directory patterns.",
-        "No Link Opportunity",
-      ),
+      purposeOf(c),
     );
   }
   for (const c of nonHttps) {
@@ -554,8 +606,10 @@ export async function runResearch(
         approvalStatus: "rejected",
         approvalReason: "Rejected: site is not HTTPS.",
         withinBudget: null,
+        rejectionCategory: "Unknown",
       },
       unscrapedCrawl(c.serp, "Non-HTTPS candidate skipped.", "No Link Opportunity"),
+      purposeOf(c),
     );
   }
 
@@ -581,7 +635,7 @@ export async function runResearch(
         serp_results: allResults.length,
         after_dedup: candidates.length,
         non_https: nonHttps.length,
-        spam_rejected: spam.length,
+        prefilter_rejected: prefiltered.length,
         dr_passed: passedDr.length,
         dr_rejected: belowDr.length,
         dr_unavailable: drUnknown.length,

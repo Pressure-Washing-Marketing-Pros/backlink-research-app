@@ -129,4 +129,71 @@ export function isCrawlCacheFresh(
 // Job boards, coupon sites, and generic directories are never sponsorship
 // opportunities — rejected before any Ahrefs or Firecrawl spend.
 export const SPAM_DOMAIN_PATTERN =
-  /ziprecruiter|indeed\.com|glassdoor|monster\.com|careerbuilder|linkedin\.com\/jobs|simplyhired|snagajob|groupon|retailmenot|coupon|dealspotr|honey\.com|yelp\.com|yellowpages|manta\.com|mapquest|foursquare/i;
+  /ziprecruiter|indeed\.com|glassdoor|monster\.com|careerbuilder|linkedin\.com\/jobs|simplyhired|snagajob|jobtoday|salutemyjob|groupon|retailmenot|coupon|dealspotr|honey\.com|yellowpages|manta\.com|mapquest|foursquare/i;
+
+// ---------------------------------------------------------------------------
+// Strict page-purpose filtering.
+//
+// We are NOT looking for pages that talk about sponsorship. We are looking
+// for pages where a business can actually purchase, request, or apply for
+// sponsorship. If the page does not offer a sponsorship opportunity, it must
+// be rejected — regardless of DR or how often it mentions "sponsor".
+// ---------------------------------------------------------------------------
+
+// Positive phrases: a scraped page must contain at least one of these to be
+// classified as an actual sponsorship opportunity.
+export const SPONSORSHIP_OPPORTUNITY_PHRASES: readonly string[] = [
+  "become a sponsor",
+  "sponsor our event",
+  "sponsor this event",
+  "sponsorship opportunities",
+  "sponsorship packages",
+  "sponsor packet",
+  "sponsorship packet",
+  "sponsorship form",
+  "sponsor registration",
+  "sponsor application",
+  "sponsor levels",
+  "sponsorship levels",
+  "corporate sponsorship",
+  "business sponsorship",
+  "community sponsorship",
+  "advertising opportunities",
+  "become a partner",
+  "partner with us",
+  "vendor opportunities",
+  "exhibitor opportunities",
+  "support our event",
+  "donate as a sponsor",
+  "sponsorship includes",
+  "sponsor benefits",
+  "benefits include",
+  "submit sponsorship",
+  "contact us to sponsor",
+];
+
+// Passive sponsor mentions: only valid when opportunity phrases also appear
+// on the same page — otherwise the page is a "current sponsors" list.
+export const PASSIVE_SPONSOR_PHRASES: readonly string[] = [
+  "our sponsors",
+  "current sponsors",
+  "meet our sponsors",
+  "thank you to our sponsors",
+  "sponsored by",
+  "presented by",
+  "sponsor list",
+  "sponsor logos",
+];
+
+// Domains that are never sponsorship opportunities — hard rejected in the
+// pre-filter, before any Ahrefs or Firecrawl spend.
+export const HARD_REJECT_TRAVEL_REVIEW_PATTERN = /tripadvisor\.com|yelp\.com/i;
+export const HARD_REJECT_SOCIAL_FORUM_PATTERN =
+  /reddit\.com|facebook\.com|instagram\.com|linkedin\.com|youtube\.com|tiktok\.com|pinterest\.com|(^|[\s/.])x\.com|twitter\.com/i;
+export const HARD_REJECT_BLOG_PLATFORM_PATTERN = /medium\.com|substack\.com/i;
+
+// A URL/title signal strong enough to allow an /events/, /register/, or .pdf
+// path through the pre-filter (e.g. "sponsorship-opportunities", "sponsor
+// packet"). Dots match the -, _, %20, or space between words in URLs.
+export const OPPORTUNITY_SIGNAL_PATTERN =
+  /become.a.sponsor|sponsorship.opportunit|sponsor(ship)?.packet|sponsorship.package|sponsor.registration|sponsorship.form|sponsor.application|sponsorship.prospectus|sponsor(ship)?.levels?/i;
