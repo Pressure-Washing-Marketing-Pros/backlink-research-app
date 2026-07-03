@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { OPPORTUNITY_COLUMNS } from "@/lib/decision";
 import { toCsv } from "@/lib/csv";
 import type {
@@ -65,7 +65,6 @@ export default function Home() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [editedRows, setEditedRows] = useState<Record<string, Partial<Opportunity>>>({});
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [decisionFilter, setDecisionFilter] = useState<"All" | Decision>("All");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<{ ready: boolean; missing: string[]; message: string } | null>(null);
@@ -96,7 +95,6 @@ export default function Home() {
     setMissing(null);
     setResult(null);
     setEditedRows({});
-    setExpandedRows({});
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -138,10 +136,6 @@ export default function Home() {
       ...prev,
       [key]: { ...(prev[key] ?? {}), ...changes },
     }));
-  }
-
-  function toggleRowExpansion(key: string) {
-    setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function previewQueries() {
@@ -556,20 +550,26 @@ export default function Home() {
                   {filtered.map((o, i) => {
                     const rowKey = getOpportunityKey(o);
                     return (
-                      <Fragment key={`${rowKey}-${i}`}>
-                        <tr>
+                        <tr key={`${rowKey}-${i}`}>
                           <td className="px-3 py-2 font-mono tabular-nums">{o.Score}</td>
                           <td className="px-3 py-2">
-                            <DecisionQuickActions
-                              decision={o.Decision}
-                              onChange={(next) =>
+                            <select
+                              value={o.Decision}
+                              onChange={(e) =>
                                 handleRowChange(rowKey, {
-                                  Decision: next,
+                                  Decision: e.target.value as Decision,
                                   "Human Review Trigger":
-                                    next === "Reject" ? "Manual reject" : o["Human Review Trigger"],
+                                    e.target.value === "Reject" ? "Manual reject" : o["Human Review Trigger"],
                                 })
                               }
-                            />
+                              className={`rounded px-2 py-1 text-xs font-medium border-0 ${DECISION_BADGE_STYLES[o.Decision]}`}
+                            >
+                              {ALL_DECISIONS.map((d) => (
+                                <option key={d} value={d}>
+                                  {d}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                           <td className="px-3 py-2">
                             <a
@@ -580,13 +580,6 @@ export default function Home() {
                             >
                               {o["Opportunity Name"] || o.Domain}
                             </a>
-                            <button
-                              type="button"
-                              onClick={() => toggleRowExpansion(rowKey)}
-                              className="ml-3 rounded-full border border-zinc-300 px-2 py-1 text-[11px] text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                            >
-                              {expandedRows[rowKey] ? "Hide" : "Details"}
-                            </button>
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{o.Domain}</td>
                           <td className="px-3 py-2 text-xs">
@@ -602,60 +595,6 @@ export default function Home() {
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Human Review Trigger"]}</td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Search Query Used"]}</td>
                         </tr>
-                        {expandedRows[rowKey] && (
-                          <tr className="bg-zinc-50 dark:bg-zinc-950">
-                            <td colSpan={11} className="px-3 py-3 text-sm text-zinc-700 dark:text-zinc-300">
-                              <div className="grid gap-3 md:grid-cols-2">
-                                <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                                  <div className="text-xs uppercase text-zinc-500">Opportunity details</div>
-                                  <p><strong>Type:</strong> {o["Opportunity Type"]}</p>
-                                  <p><strong>Relevance notes:</strong> {o["Local Relevance Notes"]}</p>
-                                  <p><strong>Link evidence:</strong> {o["Link Evidence"]}</p>
-                                  <p><strong>Payment:</strong> {o["Payment Amount"]} ({o["Payment Type"]})</p>
-                                  <p><strong>Submission:</strong> {o["Submission Method"]} / {o["Submission URL"] || "Unknown"}</p>
-                                </div>
-                                <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                                  <div className="text-xs uppercase text-zinc-500">Tracking & contacts</div>
-                                  <p><strong>Contact email:</strong> {o["Contact Email"] || "Unknown"}</p>
-                                  <p><strong>Contact person:</strong> {o["Contact Person"] || "Unknown"}</p>
-                                  <p><strong>Notes:</strong> {o.Notes}</p>
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    <label className="flex flex-col gap-1 text-xs text-zinc-500">
-                                      Status
-                                      <select
-                                        value={o.Decision}
-                                        onChange={(e) =>
-                                          handleRowChange(rowKey, {
-                                            Decision: e.target.value as Decision,
-                                            "Human Review Trigger":
-                                              e.target.value === "Reject" ? "Manual reject" : o["Human Review Trigger"],
-                                          })
-                                        }
-                                        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                                      >
-                                        <option value="Approve">Approve</option>
-                                        <option value="Needs Human Review">Needs Human Review</option>
-                                        <option value="Reject">Reject</option>
-                                      </select>
-                                    </label>
-                                    <label className="flex flex-col gap-1 text-xs text-zinc-500">
-                                      Notes
-                                      <textarea
-                                        rows={3}
-                                        value={o.Notes}
-                                        onChange={(e) =>
-                                          handleRowChange(rowKey, { Notes: e.target.value })
-                                        }
-                                        className="min-h-[80px] rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 focus:outline-none focus:ring-1 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
                     );
                   })}
                   {filtered.length === 0 && (
@@ -739,46 +678,7 @@ const DECISION_BADGE_STYLES: Record<Decision, string> = {
   Reject: "bg-red-100 text-red-800",
 };
 
-const DECISION_SHORT_LABEL: Record<Decision, string> = {
-  Approve: "✓ Approve",
-  "Needs Human Review": "⊙ Review",
-  Reject: "✕ Reject",
-};
-
 const ALL_DECISIONS: Decision[] = ["Approve", "Needs Human Review", "Reject"];
-
-// Editable directly from the results row — no need to open Details just to
-// change status.
-function DecisionQuickActions({
-  decision,
-  onChange,
-}: {
-  decision: Decision;
-  onChange: (next: Decision) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Decision status">
-      {ALL_DECISIONS.map((d) => {
-        const active = d === decision;
-        return (
-          <button
-            key={d}
-            type="button"
-            onClick={() => !active && onChange(d)}
-            title={`Set decision to ${d}`}
-            className={`whitespace-nowrap rounded px-2 py-1 text-[11px] font-medium border transition-colors ${
-              active
-                ? `${DECISION_BADGE_STYLES[d]} border-transparent ring-1 ring-offset-1 ring-zinc-400`
-                : "bg-white text-zinc-500 border-zinc-300 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-            }`}
-          >
-            {DECISION_SHORT_LABEL[d]}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 function SummaryPanel({
   result,
