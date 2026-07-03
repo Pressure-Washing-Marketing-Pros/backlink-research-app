@@ -143,10 +143,17 @@ export interface StoredOpportunity {
   duplicate_of?: string | null;
   last_checked_at?: number | null;
   last_refreshed_at?: number | null;
+  county?: string;
+  resolved_location_scope?: string;
+  location_confidence?: string;
+  location_evidence?: string;
+  source_query_scopes?: string;
 }
 
 export interface SearchFilters {
   city?: string;
+  county?: string;
+  locationScope?: string;
   state?: string;
   search?: string;
   decision?: string;
@@ -214,8 +221,35 @@ export async function saveOpportunitiesToDb(
   // existing record rather than a new row, so re-running research doesn't
   // clutter the inventory with repeats.
   const existingRows = (await sql.query(
-    `SELECT id, domain, sponsorship_url, normalized_url, state FROM opportunities`,
-  )) as { id: string; domain: string; sponsorship_url: string; normalized_url: string | null; state: string }[];
+    `SELECT id, domain, sponsorship_url, normalized_url, state, city, county, location,
+            resolved_location_scope, location_confidence, location_evidence, source_query_scopes
+     FROM opportunities`,
+  )) as {
+    id: string;
+    domain: string;
+    sponsorship_url: string;
+    normalized_url: string | null;
+    state: string;
+    city: string | null;
+    county: string | null;
+    location: string | null;
+    resolved_location_scope: string | null;
+    location_confidence: string | null;
+    location_evidence: string | null;
+    source_query_scopes: string | null;
+  }[];
+  // City is the most specific resolvable scope, then county, then statewide;
+  // "unclear" is the least specific. When a duplicate is merged, the more
+  // specific of the two resolved locations wins — never the broadest query
+  // source that happened to run last.
+  const mergeScopes = (existing: string | null, incoming: string): string =>
+    Array.from(
+      new Set(
+        [...(existing ?? "").split(","), ...incoming.split(",")]
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    ).join(", ");
   const byDomain = new Map<string, typeof existingRows[number]>();
   const byNormalizedUrl = new Map<string, typeof existingRows[number]>();
   for (const row of existingRows) {
@@ -244,7 +278,19 @@ export async function saveOpportunitiesToDb(
 
     if (confidentDuplicate) {
       // Same domain/URL already in inventory — refresh the existing record
-      // instead of inserting a near-duplicate row.
+      // instead of inserting a near-duplicate row. Keep whichever resolved
+      // location (existing vs. this run's) is more specific.
+      const existingScope = confidentDuplicate.resolved_location_scope || "unclear";
+      const newScope = opp["Resolved Location Scope"];
+      const useNewLocation = (SCOPE_SPECIFICITY[newScope] ?? 0) >= (SCOPE_SPECIFICITY[existingScope] ?? 0);
+      const finalCity = useNewLocation ? opp.City : confidentDuplicate.city ?? "";
+      const finalCounty = useNewLocation ? opp.County : confidentDuplicate.county ?? "";
+      const finalLocation = useNewLocation ? opp.Location : confidentDuplicate.location ?? opp.Location;
+      const finalScope = useNewLocation ? newScope : existingScope;
+      const finalConfidence = useNewLocation ? opp["Location Confidence"] : confidentDuplicate.location_confidence ?? opp["Location Confidence"];
+      const finalEvidence = useNewLocation ? opp["Location Evidence"] : confidentDuplicate.location_evidence ?? opp["Location Evidence"];
+      const finalScopes = mergeScopes(confidentDuplicate.source_query_scopes, opp["Source Query Scopes"]);
+
       queries.push(
         sql.query(
           `UPDATE opportunities SET
@@ -252,8 +298,10 @@ export async function saveOpportunitiesToDb(
              submission_method = $5, contact_email = $6, link_evidence = $7,
              link_opportunity_status = $8, decision = $9, human_review_trigger = $10,
              score = $11, notes = $12, normalized_url = $13, location = $14,
-             run_id = $15, updated_at = $16, last_checked_at = $16
-           WHERE id = $17`,
+             city = $15, county = $16, resolved_location_scope = $17,
+             location_confidence = $18, location_evidence = $19, source_query_scopes = $20,
+             run_id = $21, updated_at = $22, last_checked_at = $22
+           WHERE id = $23`,
           [
             opp.DR === "Unknown" ? null : opp.DR,
             opp.Traffic === "Unknown" ? null : opp.Traffic,
@@ -268,7 +316,13 @@ export async function saveOpportunitiesToDb(
             opp.Score,
             `${opp.Notes} Skipped duplicate insert — existing record updated instead.`,
             normalizedUrl,
-            opp.Location,
+            finalLocation,
+            finalCity,
+            finalCounty,
+            finalScope,
+            finalConfidence,
+            finalEvidence,
+            finalScopes,
             runId,
             now,
             confidentDuplicate.id,
@@ -292,18 +346,19 @@ export async function saveOpportunitiesToDb(
       sql.query(
         `INSERT INTO opportunities (
           id, domain, sponsorship_url, sponsor_page_url, opportunity_name,
-          opportunity_type, city, state, location, local_relevance_rating,
+          opportunity_type, city, county, state, location, local_relevance_rating,
           local_relevance_notes, current_sponsors_displayed, current_sponsors_linked,
           link_opportunity_status, link_evidence, payment_amount, payment_type,
           cheapest_tier_with_link, tier_name, submission_method, submission_url,
           contact_email, contact_person, dr, da, organic_traffic, https,
           freshness_notes, notes, decision, human_review_trigger, score,
           search_query_used, client_origin, run_id, normalized_url, duplicate_of,
+          resolved_location_scope, location_confidence, location_evidence, source_query_scopes,
           last_checked_at, last_refreshed_at, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
           $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41
+          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45
         )
         ON CONFLICT (domain, sponsorship_url) DO UPDATE SET
           updated_at = EXCLUDED.updated_at,
@@ -320,6 +375,7 @@ export async function saveOpportunitiesToDb(
           opp["Opportunity Name"],
           opp["Opportunity Type"],
           opp.City,
+          opp.County,
           opp.State,
           opp.Location,
           opp["Local Relevance Rating"],
@@ -350,6 +406,10 @@ export async function saveOpportunitiesToDb(
           runId,
           normalizedUrl,
           duplicateOfId,
+          opp["Resolved Location Scope"],
+          opp["Location Confidence"],
+          opp["Location Evidence"],
+          opp["Source Query Scopes"],
           now,
           now,
           now,
@@ -359,8 +419,22 @@ export async function saveOpportunitiesToDb(
     );
     // Track newly-added rows in-memory so later opportunities in the same
     // run that share a domain/URL are also treated as duplicates.
-    byDomain.set(domainKey, { id, domain: opp.Domain, sponsorship_url: sponsorshipUrl, normalized_url: normalizedUrl, state: opp.State });
-    byNormalizedUrl.set(normalizedUrl, { id, domain: opp.Domain, sponsorship_url: sponsorshipUrl, normalized_url: normalizedUrl, state: opp.State });
+    const trackedRow = {
+      id,
+      domain: opp.Domain,
+      sponsorship_url: sponsorshipUrl,
+      normalized_url: normalizedUrl,
+      state: opp.State,
+      city: opp.City,
+      county: opp.County,
+      location: opp.Location,
+      resolved_location_scope: opp["Resolved Location Scope"],
+      location_confidence: opp["Location Confidence"],
+      location_evidence: opp["Location Evidence"],
+      source_query_scopes: opp["Source Query Scopes"],
+    };
+    byDomain.set(domainKey, trackedRow);
+    byNormalizedUrl.set(normalizedUrl, trackedRow);
     savedCount++;
   }
 
@@ -410,6 +484,11 @@ export async function updateOpportunityDecision(
   return rows.length > 0;
 }
 
+// City is the most specific resolvable scope, then county, then statewide;
+// "unclear" is the least specific — used to decide whether a new resolution
+// should overwrite an existing one (never downgrade specificity silently).
+const SCOPE_SPECIFICITY: Record<string, number> = { city: 3, county: 2, state: 1, unclear: 0 };
+
 export interface RefreshFields {
   dr?: number | null;
   organic_traffic?: number | null;
@@ -420,6 +499,18 @@ export interface RefreshFields {
   link_evidence?: string;
   freshness_notes?: string;
   note?: string;
+  /** Re-resolved location, if the refresh re-crawled the page. Overwrites the
+   *  stored location only when provided — an "unclear" old record stays
+   *  Needs Human Review until a refresh actually resolves it. */
+  location?: {
+    scope: string;
+    city: string;
+    county: string;
+    state: string;
+    label: string;
+    confidence: string;
+    evidence: string;
+  };
 }
 
 export async function refreshOpportunity(
@@ -431,6 +522,14 @@ export async function refreshOpportunity(
   const existing = await getOpportunityById(id);
   if (!existing) return false;
 
+  // Only let the refreshed location overwrite the stored one when it is at
+  // least as specific — an "unclear" refresh (e.g. a failed re-crawl) never
+  // downgrades a previously confirmed city/county/statewide record.
+  const existingScope = existing.resolved_location_scope || "unclear";
+  const newScope = fields.location?.scope;
+  const useNewLocation =
+    !!fields.location && (SCOPE_SPECIFICITY[newScope ?? "unclear"] ?? 0) >= (SCOPE_SPECIFICITY[existingScope] ?? 0);
+
   const merged = {
     dr: fields.dr ?? existing.dr,
     organic_traffic: fields.organic_traffic ?? existing.organic_traffic,
@@ -441,6 +540,19 @@ export async function refreshOpportunity(
     link_evidence: fields.link_evidence ?? existing.link_evidence ?? "",
     freshness_notes: fields.freshness_notes ?? existing.freshness_notes ?? "",
     notes: fields.note ? `${existing.notes ?? ""} ${fields.note}`.trim() : existing.notes ?? "",
+    city: useNewLocation ? fields.location!.city : existing.city ?? "",
+    county: useNewLocation ? fields.location!.county : existing.county ?? "",
+    state: useNewLocation ? fields.location!.state : existing.state,
+    location: useNewLocation ? fields.location!.label : existing.location ?? "",
+    resolved_location_scope: useNewLocation ? fields.location!.scope : existingScope,
+    location_confidence: useNewLocation ? fields.location!.confidence : existing.location_confidence ?? "low",
+    location_evidence: useNewLocation ? fields.location!.evidence : existing.location_evidence ?? "",
+    human_review_trigger:
+      (useNewLocation ? fields.location!.scope : existingScope) === "unclear"
+        ? existing.human_review_trigger && existing.human_review_trigger !== "None"
+          ? existing.human_review_trigger
+          : "Location unclear"
+        : existing.human_review_trigger,
   };
 
   const rows = await sql.query(
@@ -448,8 +560,11 @@ export async function refreshOpportunity(
        dr = $1, organic_traffic = $2, payment_amount = $3, payment_type = $4,
        submission_method = $5, contact_email = $6, link_evidence = $7,
        freshness_notes = $8, notes = $9,
-       last_checked_at = $10, last_refreshed_at = $10, updated_at = $10
-     WHERE id = $11
+       city = $10, county = $11, state = $12, location = $13,
+       resolved_location_scope = $14, location_confidence = $15, location_evidence = $16,
+       human_review_trigger = $17,
+       last_checked_at = $18, last_refreshed_at = $18, updated_at = $18
+     WHERE id = $19
      RETURNING id`,
     [
       merged.dr,
@@ -461,6 +576,14 @@ export async function refreshOpportunity(
       merged.link_evidence,
       merged.freshness_notes,
       merged.notes,
+      merged.city,
+      merged.county,
+      merged.state,
+      merged.location,
+      merged.resolved_location_scope,
+      merged.location_confidence,
+      merged.location_evidence,
+      merged.human_review_trigger,
       now,
       id,
     ],
@@ -558,9 +681,17 @@ export async function searchOpportunities(filters: SearchFilters): Promise<{
     params.push(filters.city);
     conditions.push(`city = $${params.length}`);
   }
+  if (filters.county) {
+    params.push(filters.county);
+    conditions.push(`county = $${params.length}`);
+  }
   if (filters.state) {
     params.push(filters.state);
     conditions.push(`state = $${params.length}`);
+  }
+  if (filters.locationScope) {
+    params.push(filters.locationScope);
+    conditions.push(`resolved_location_scope = $${params.length}`);
   }
   if (filters.decision) {
     params.push(filters.decision);

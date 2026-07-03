@@ -56,8 +56,16 @@ export const SCHEMA_STATEMENTS: string[] = [
   `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS duplicate_of TEXT`,
   `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS last_checked_at BIGINT`,
   `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS last_refreshed_at BIGINT`,
+  // --- City/county/state scope tracking (single-run multi-scope research) ---
+  `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS county TEXT`,
+  `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS resolved_location_scope TEXT`,
+  `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS location_confidence TEXT`,
+  `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS location_evidence TEXT`,
+  `ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS source_query_scopes TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_opportunities_location ON opportunities(location)`,
   `CREATE INDEX IF NOT EXISTS idx_opportunities_domain ON opportunities(domain)`,
+  `CREATE INDEX IF NOT EXISTS idx_opportunities_county ON opportunities(county)`,
+  `CREATE INDEX IF NOT EXISTS idx_opportunities_resolved_scope ON opportunities(resolved_location_scope)`,
   `CREATE TABLE IF NOT EXISTS research_runs (
       id TEXT PRIMARY KEY,
       client_name TEXT NOT NULL,

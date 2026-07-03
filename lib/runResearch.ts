@@ -24,6 +24,7 @@ import {
   type StrictDecision,
 } from "@/lib/pageAnalysis";
 import { normalizeUrl } from "@/lib/urlNormalize";
+import { resolveLocation } from "@/lib/locationResolve";
 import {
   getCachedCrawls,
   upsertCrawlCache,
@@ -43,6 +44,8 @@ import type {
   Opportunity,
   PageAnalysis,
   PagePurpose,
+  QueryScope,
+  RenderedQuery,
   RunResult,
   SerpResult,
   SponsorshipCrawlResult,
@@ -165,6 +168,24 @@ interface Candidate {
   serp: SerpResult;
   key: string;
   fetchUrl: string;
+  /** Query bucket that produced the kept SERP result for this candidate. */
+  scope: QueryScope;
+  /** Every query bucket (city/county/state) this domain surfaced under, this run. */
+  sourceScopes: QueryScope[];
+}
+
+// A single run's cap is spread evenly across whichever scopes (city/county/
+// state) actually have queries this run, so a state-heavy query bank never
+// crowds out the city/county buckets before they get a turn.
+function capQueriesPerScope(queries: RenderedQuery[], totalCap: number): RenderedQuery[] {
+  const scopes = Array.from(new Set(queries.map((q) => q.scope)));
+  if (scopes.length === 0) return [];
+  const perScope = Math.max(1, Math.floor(totalCap / scopes.length));
+  const out: RenderedQuery[] = [];
+  for (const scope of scopes) {
+    out.push(...queries.filter((q) => q.scope === scope).slice(0, perScope));
+  }
+  return out;
 }
 
 interface ScrapeOutcome {
@@ -354,6 +375,9 @@ interface RowArgs {
   metrics: AhrefsMetrics;
   crawl: SponsorshipCrawlResult;
   strict: StrictDecision;
+  queryScope: QueryScope;
+  sourceScopes: QueryScope[];
+  scrapedText: string;
   analysisBase: Omit<
     PageAnalysis,
     "approvalStatus" | "approvalReason" | "analyzedAt" | "withinBudget" | "rejectionCategory"
@@ -361,7 +385,7 @@ interface RowArgs {
 }
 
 function buildRow(args: RowArgs): Opportunity {
-  const { serp, inputs, metrics, crawl, strict } = args;
+  const { serp, inputs, metrics, crawl, strict, queryScope, sourceScopes, scrapedText } = args;
   const final = resolveFinal(serp, crawl, strict);
   const opp = buildOpportunity({ serp, inputs, metrics, crawl });
   const decision = DECISION_BY_STATUS[final.status];
@@ -375,7 +399,35 @@ function buildRow(args: RowArgs): Opportunity {
   // Non-opportunity page purposes never rank high, whatever their DR.
   const cap = PAGE_PURPOSE_SCORE_CAPS[args.analysisBase.pagePurpose] ?? 100;
   opp.Score = Math.min(opp.Score, cap);
-  if (decision === "Reject") opp.Score = 0;
+
+  // The final location is resolved from what the page itself says — never
+  // just defaulted to the query bucket (city/county/state) that found it.
+  const location = resolveLocation({
+    sourceScope: queryScope,
+    title: args.analysisBase.pageTitle || serp.title,
+    url: args.analysisBase.finalUrl || serp.url,
+    domain: args.analysisBase.domain,
+    scrapedText,
+    inputs,
+  });
+  opp.City = location.city;
+  opp.County = location.county;
+  opp.State = location.state || opp.State;
+  opp.Location = location.label;
+  opp["Resolved Location Scope"] = location.scope;
+  opp["Location Confidence"] = location.confidence;
+  opp["Location Evidence"] = location.evidence;
+  opp["Source Query Scopes"] = sourceScopes.join(", ");
+
+  // An otherwise-approvable opportunity with no resolvable location still
+  // needs a human to confirm where it actually applies.
+  if (location.scope === "unclear" && decision === "Approve") {
+    opp.Decision = "Needs Human Review";
+    opp["Human Review Trigger"] =
+      opp["Human Review Trigger"] === "None" ? "Location unclear" : `${opp["Human Review Trigger"]}; Location unclear`;
+  }
+
+  if (opp.Decision === "Reject") opp.Score = 0;
 
   opp._analysis = {
     ...args.analysisBase,
@@ -414,10 +466,15 @@ export async function runResearch(
 
   const allQueries = renderQueries(inputs);
   const queryCap = maxQueriesPerRun();
-  const queries = allQueries.slice(0, queryCap);
+  const queries = capQueriesPerScope(allQueries, queryCap);
   if (allQueries.length > queries.length) {
     log(`Query cap (${queryCap}) active — using ${queries.length}/${allQueries.length} queries this run`);
   }
+  const scopeBreakdown = queries.reduce<Record<string, number>>((acc, q) => {
+    acc[q.scope] = (acc[q.scope] ?? 0) + 1;
+    return acc;
+  }, {});
+  log(`Query scopes this run: ${JSON.stringify(scopeBreakdown)}`);
 
   // 1. DataForSEO SERP results
   const serpBatches = await runWithConcurrency(queries, serpConc, async (q) => {
@@ -428,7 +485,7 @@ export async function runResearch(
         target_state: q.target_state,
         depth: maxDepth,
       });
-      return results.slice(0, maxDepth);
+      return results.slice(0, maxDepth).map((r) => ({ ...r, query_scope: q.scope }));
     } catch (e) {
       console.error(`SERP query failed: ${q.query}`, e);
       return [] as SerpResult[];
@@ -436,6 +493,17 @@ export async function runResearch(
   });
   const allResults = serpBatches.flat();
   log(`DataForSEO returned ${allResults.length} result URLs from ${queries.length} queries`);
+
+  // Track every scope a domain surfaced under this run, before per-domain
+  // reduction collapses to one representative result — so a domain found via
+  // both a city and a state query keeps both scopes on its final record.
+  const scopesByDomain = new Map<string, Set<QueryScope>>();
+  for (const r of allResults) {
+    if (!r.root_domain) continue;
+    const set = scopesByDomain.get(r.root_domain) ?? new Set<QueryScope>();
+    set.add(r.query_scope ?? "state");
+    scopesByDomain.set(r.root_domain, set);
+  }
 
   // 2. Normalize + deduplicate before any paid lookups
   const perDomain = pickBestResultPerDomain(allResults);
@@ -445,7 +513,14 @@ export async function runResearch(
     const norm = normalizeUrl(r.url);
     if (!norm || seen.has(norm.key)) continue;
     seen.add(norm.key);
-    candidates.push({ serp: r, key: norm.key, fetchUrl: norm.fetchUrl });
+    const sourceScopes = Array.from(scopesByDomain.get(r.root_domain) ?? [r.query_scope ?? "state"]);
+    candidates.push({
+      serp: r,
+      key: norm.key,
+      fetchUrl: norm.fetchUrl,
+      scope: r.query_scope ?? "state",
+      sourceScopes,
+    });
   }
   log(`${candidates.length} candidates after domain + URL deduplication`);
 
@@ -706,6 +781,9 @@ export async function runResearch(
         metrics,
         crawl,
         strict,
+        queryScope: out.candidate.scope,
+        sourceScopes: out.candidate.sourceScopes,
+        scrapedText: out.text,
         analysisBase: {
           normalizedUrl: out.candidate.key,
           sourceUrl: out.candidate.serp.url,
@@ -746,6 +824,9 @@ export async function runResearch(
         metrics,
         crawl,
         strict,
+        queryScope: c.scope,
+        sourceScopes: c.sourceScopes,
+        scrapedText: "",
         analysisBase: {
           normalizedUrl: c.key,
           sourceUrl: c.serp.url,

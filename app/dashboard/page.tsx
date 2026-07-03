@@ -24,6 +24,28 @@ interface SearchResponse {
 
 const DECISION_OPTIONS = ["Approve", "Needs Human Review", "Reject"] as const;
 
+const SCOPE_OPTIONS = [
+  { value: "", label: "All" },
+  { value: "city", label: "City opportunities" },
+  { value: "county", label: "County opportunities" },
+  { value: "state", label: "Statewide opportunities" },
+  { value: "unclear", label: "Location unclear" },
+] as const;
+
+function scopeBadgeClass(scope?: string): string {
+  if (scope === "city") return "bg-blue-100 text-blue-800";
+  if (scope === "county") return "bg-teal-100 text-teal-800";
+  if (scope === "state") return "bg-indigo-100 text-indigo-800";
+  return "bg-gray-100 text-gray-600";
+}
+
+function scopeLabel(scope?: string): string {
+  if (scope === "city") return "City";
+  if (scope === "county") return "County";
+  if (scope === "state") return "Statewide";
+  return "Unclear";
+}
+
 const EXPORT_COLUMNS = [
   "opportunity_name",
   "domain",
@@ -31,7 +53,10 @@ const EXPORT_COLUMNS = [
   "sponsor_page_url",
   "location",
   "state",
+  "county",
   "city",
+  "resolved_location_scope",
+  "source_query_scopes",
   "decision",
   "human_review_trigger",
   "payment_amount",
@@ -60,6 +85,13 @@ function decisionBadgeClass(decision?: string): string {
   return "bg-gray-100 text-gray-700";
 }
 
+function duplicateLabel(opp: StoredOpportunity): string | null {
+  if (opp.duplicate_of) return "Possible duplicate";
+  if (opp.notes?.includes("Skipped duplicate insert")) return "Skipped duplicate";
+  if (opp.notes?.includes("Existing record updated")) return "Existing record updated";
+  return null;
+}
+
 export default function Dashboard() {
   const [opportunities, setOpportunities] = useState<StoredOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,7 +110,9 @@ export default function Dashboard() {
 
   // Search/filter state
   const [cityFilter, setCityFilter] = useState("");
+  const [countyFilter, setCountyFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
+  const [scopeFilter, setScopeFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("");
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
@@ -98,7 +132,9 @@ export default function Dashboard() {
         sortOrder,
       });
       if (cityFilter) params.append("city", cityFilter);
+      if (countyFilter) params.append("county", countyFilter);
       if (stateFilter) params.append("state", stateFilter);
+      if (scopeFilter) params.append("locationScope", scopeFilter);
       if (searchTerm) params.append("search", searchTerm);
       if (decisionFilter) params.append("decision", decisionFilter);
       if (paymentTypeFilter) params.append("paymentType", paymentTypeFilter);
@@ -107,7 +143,7 @@ export default function Dashboard() {
       for (const [k, v] of Object.entries(overrides)) params.set(k, v);
       return params;
     },
-    [cityFilter, stateFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage],
+    [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage],
   );
 
   // Fetch stats on mount
@@ -171,11 +207,13 @@ export default function Dashboard() {
     };
     fetchOpportunities();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cityFilter, stateFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage]);
+  }, [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage]);
 
   const resetFilters = useCallback(() => {
     setCityFilter("");
+    setCountyFilter("");
     setStateFilter("");
+    setScopeFilter("");
     setSearchTerm("");
     setDecisionFilter("");
     setPaymentTypeFilter("");
@@ -448,6 +486,38 @@ export default function Dashboard() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
+                  <input
+                    type="text"
+                    value={countyFilter}
+                    onChange={(e) => {
+                      setCountyFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    placeholder="e.g. Hillsborough County"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Scope</label>
+                  <select
+                    value={scopeFilter}
+                    onChange={(e) => {
+                      setScopeFilter(e.target.value);
+                      setCurrentPage(0);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {SCOPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Decision Status</label>
                   <select
                     value={decisionFilter}
@@ -577,6 +647,9 @@ export default function Dashboard() {
                             Decision
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Flags
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             DR
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
@@ -605,7 +678,14 @@ export default function Dashboard() {
                                 <div className="text-xs text-gray-500 font-normal">{opp.domain}</div>
                               </td>
                               <td className="px-4 py-4 text-sm text-gray-600">
-                                {opp.location || `${opp.city || ""}${opp.city && opp.state ? ", " : ""}${opp.state || ""}` || "Unknown"}
+                                <div>
+                                  {opp.location || `${opp.city || ""}${opp.city && opp.state ? ", " : ""}${opp.state || ""}` || "Location unclear"}
+                                </div>
+                                <span
+                                  className={`mt-1 inline-block px-2 py-0.5 rounded text-[11px] font-medium ${scopeBadgeClass(opp.resolved_location_scope)}`}
+                                >
+                                  {scopeLabel(opp.resolved_location_scope)}
+                                </span>
                               </td>
                               <td className="px-4 py-4 text-sm">
                                 <select
@@ -624,6 +704,21 @@ export default function Dashboard() {
                                   <div className="mt-1 text-[11px] text-gray-500 max-w-xs">
                                     {opp.human_review_trigger}
                                   </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-xs space-y-1">
+                                {duplicateLabel(opp) && (
+                                  <div className="inline-block px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-medium">
+                                    {duplicateLabel(opp)}
+                                  </div>
+                                )}
+                                {opp.sensitive_category && (
+                                  <div className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-medium">
+                                    Sensitive: {opp.sensitive_category}
+                                  </div>
+                                )}
+                                {!duplicateLabel(opp) && !opp.sensitive_category && (
+                                  <span className="text-gray-300">—</span>
                                 )}
                               </td>
                               <td className="px-4 py-4 text-sm text-gray-900 font-semibold">
@@ -662,7 +757,7 @@ export default function Dashboard() {
                             </tr>
                             {expandedId === opp.id && (
                               <tr className="bg-gray-50">
-                                <td colSpan={8} className="px-6 py-4">
+                                <td colSpan={9} className="px-6 py-4">
                                   <div className="grid gap-4 md:grid-cols-2 text-sm">
                                     <div className="space-y-2">
                                       <div>
@@ -689,6 +784,16 @@ export default function Dashboard() {
                                           </a>
                                         </div>
                                       )}
+                                      <div>
+                                        <p className="font-medium text-gray-900">Location Detail</p>
+                                        <p className="text-gray-600">
+                                          City: {opp.city || "—"} · County: {opp.county || "—"} · State: {opp.state || "—"}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">{opp.location_evidence || "No location evidence recorded."}</p>
+                                        {opp.source_query_scopes && (
+                                          <p className="text-xs text-gray-500">Found via: {opp.source_query_scopes} quer{opp.source_query_scopes.includes(",") ? "ies" : "y"}</p>
+                                        )}
+                                      </div>
                                       <div>
                                         <p className="font-medium text-gray-900">Current Sponsors Displayed</p>
                                         <p className="text-gray-600">{opp.current_sponsors_displayed || "Unknown"}</p>
@@ -717,6 +822,16 @@ export default function Dashboard() {
                                         <p className="font-medium text-gray-900">Human Review Triggers</p>
                                         <p className="text-gray-600">{opp.human_review_trigger || "None"}</p>
                                       </div>
+                                      {(duplicateLabel(opp) || opp.sensitive_category) && (
+                                        <div>
+                                          <p className="font-medium text-gray-900">Flags</p>
+                                          <p className="text-gray-600">
+                                            {[duplicateLabel(opp), opp.sensitive_category ? `Sensitive category: ${opp.sensitive_category}` : null]
+                                              .filter(Boolean)
+                                              .join(" · ")}
+                                          </p>
+                                        </div>
+                                      )}
                                       <div className="grid grid-cols-2 gap-2">
                                         <div>
                                           <p className="font-medium text-gray-900">Last Checked</p>

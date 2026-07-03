@@ -12,7 +12,9 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const city = url.searchParams.get("city") || undefined;
+    const county = url.searchParams.get("county") || undefined;
     const state = url.searchParams.get("state") || undefined;
+    const locationScope = url.searchParams.get("locationScope") || undefined;
     const search = url.searchParams.get("search") || undefined;
     const decision = url.searchParams.get("decision") || undefined;
     const paymentType = url.searchParams.get("paymentType") || undefined;
@@ -34,7 +36,9 @@ export async function GET(request: Request) {
 
     const result = await searchOpportunities({
       city,
+      county,
       state,
+      locationScope,
       search,
       decision,
       paymentType,

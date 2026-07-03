@@ -25,15 +25,21 @@ export function loadQueryBank(): QueryBankRow[] {
   };
   const cls = idx("class");
   const cname = idx("class_name");
+  const scopeIdx = idx("scope");
   const q = idx("query");
   cached = data.map((r) => {
     const c = Number(r[cls]);
-    if (c !== 1 && c !== 2 && c !== 3 && c !== 4) {
+    if (c !== 1 && c !== 2 && c !== 3 && c !== 4 && c !== 5) {
       throw new Error(`Invalid class ${r[cls]} in query bank`);
     }
+    const scope = r[scopeIdx];
+    if (scope !== "city" && scope !== "county" && scope !== "state") {
+      throw new Error(`Invalid scope "${r[scopeIdx]}" in query bank`);
+    }
     return {
-      class: c as 1 | 2 | 3 | 4,
+      class: c as 1 | 2 | 3 | 4 | 5,
       class_name: r[cname],
+      scope,
       query: r[q],
     };
   });
@@ -51,12 +57,19 @@ function substitute(
   return out;
 }
 
+// A single research run collects opportunities at up to three geographic
+// levels — city, county, and statewide — as separate query buckets, so
+// results can be traced back to (and later re-scoped away from) the level
+// that surfaced them. Each level is only queried when its input is present:
+// city queries need a target city, county queries need a county, and state
+// queries always run since client_state is a required input.
 export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
   const bank = loadQueryBank();
+  const hasCity = !!inputs.client_primary_city;
+  const hasCounty = !!inputs.county;
   const useClass4 =
     (inputs.nearby_cities_allowed === "Yes") &&
     (!!inputs.metro ||
-      !!inputs.county ||
       !!(inputs.service_area_cities && inputs.service_area_cities.length > 0));
 
   const baseVars: Record<string, string> = {
@@ -73,7 +86,6 @@ export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
     if (row.class === 4) {
       if (!useClass4) continue;
       const needsNearbyCity = row.query.includes("[NEARBY CITY]");
-      const needsCounty = row.query.includes("[COUNTY]");
       const needsMetro = row.query.includes("[METRO]");
 
       if (needsNearbyCity) {
@@ -83,6 +95,7 @@ export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
           rendered.push({
             class: row.class,
             class_name: row.class_name,
+            scope: row.scope,
             template: row.query,
             query: substitute(row.query, vars),
             target_city: city,
@@ -92,26 +105,56 @@ export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
         continue;
       }
 
-      if (needsCounty && !inputs.county) continue;
       if (needsMetro && !inputs.metro) continue;
 
       rendered.push({
         class: row.class,
         class_name: row.class_name,
+        scope: row.scope,
         template: row.query,
         query: substitute(row.query, baseVars),
-        target_city: inputs.metro || inputs.county || inputs.client_primary_city,
+        target_city: inputs.metro || inputs.client_primary_city,
         target_state: inputs.client_state,
       });
       continue;
     }
 
+    if (row.scope === "city") {
+      if (!hasCity) continue;
+      rendered.push({
+        class: row.class,
+        class_name: row.class_name,
+        scope: "city",
+        template: row.query,
+        query: substitute(row.query, baseVars),
+        target_city: inputs.client_primary_city,
+        target_state: inputs.client_state,
+      });
+      continue;
+    }
+
+    if (row.scope === "county") {
+      if (!hasCounty) continue;
+      rendered.push({
+        class: row.class,
+        class_name: row.class_name,
+        scope: "county",
+        template: row.query,
+        query: substitute(row.query, baseVars),
+        target_city: inputs.county!,
+        target_state: inputs.client_state,
+      });
+      continue;
+    }
+
+    // scope === "state" — always rendered; client_state is a required input.
     rendered.push({
       class: row.class,
       class_name: row.class_name,
+      scope: "state",
       template: row.query,
       query: substitute(row.query, baseVars),
-      target_city: inputs.client_primary_city,
+      target_city: "",
       target_state: inputs.client_state,
     });
   }

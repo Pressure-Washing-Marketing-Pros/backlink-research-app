@@ -1,34 +1,39 @@
-class,class_name,query
-1,Core city-based,"[CITY] [STATE] ""our sponsors"""
-1,Core city-based,"[CITY] [STATE] ""become a sponsor"""
-1,Core city-based,"[CITY] [STATE] ""sponsorship opportunities"""
-1,Core city-based,"[CITY] [STATE] ""event sponsors"""
-1,Core city-based,"[CITY] [STATE] ""nonprofit sponsors"""
-1,Core city-based,"[CITY] [STATE] ""school sponsors"""
-1,Core city-based,"[CITY] [STATE] ""youth sports sponsors"""
-1,Core city-based,"[CITY] [STATE] ""festival sponsors"""
-1,Core city-based,"[CITY] [STATE] ""community sponsors"""
-1,Core city-based,"[CITY] [STATE] ""sponsor package"""
-2,Core state-based,"[STATE] ""our sponsors"""
-2,Core state-based,"[STATE] ""become a sponsor"""
-2,Core state-based,"[STATE] ""sponsorship opportunities"""
-2,Core state-based,"[STATE] ""event sponsors"""
-2,Core state-based,"[STATE] ""nonprofit sponsors"""
-2,Core state-based,"[STATE] ""school sponsors"""
-2,Core state-based,"[STATE] ""festival sponsors"""
-2,Core state-based,"[STATE] ""community sponsors"""
-2,Core state-based,"[STATE] ""sponsor package"""
-2,Core state-based,"[STATE] ""sponsorship pdf"""
-3,High-value operator,"site:.org [CITY] [STATE] ""our sponsors"""
-3,High-value operator,"site:.org [CITY] [STATE] ""become a sponsor"""
-3,High-value operator,inurl:sponsor [CITY] [STATE]
-3,High-value operator,filetype:pdf [CITY] [STATE] sponsorship
-3,High-value operator,"site:.org [STATE] ""our sponsors"""
-3,High-value operator,"site:.org [STATE] ""become a sponsor"""
-3,High-value operator,inurl:sponsor [STATE]
-3,High-value operator,filetype:pdf [STATE] sponsorship
-4,Nearby relevance,"[NEARBY CITY] [STATE] ""our sponsors"""
-4,Nearby relevance,"[NEARBY CITY] [STATE] ""sponsorship opportunities"""
-4,Nearby relevance,[COUNTY] County [STATE] sponsors
-4,Nearby relevance,[METRO] sponsors
-4,Nearby relevance,"[METRO] ""our sponsors"""
+class,class_name,scope,query
+1,Core city-based,city,"[CITY] [STATE] ""our sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""become a sponsor"""
+1,Core city-based,city,"[CITY] [STATE] ""sponsorship opportunities"""
+1,Core city-based,city,"[CITY] [STATE] ""event sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""nonprofit sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""school sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""youth sports sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""festival sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""community sponsors"""
+1,Core city-based,city,"[CITY] [STATE] ""sponsor package"""
+2,Core state-based,state,"[STATE] ""our sponsors"""
+2,Core state-based,state,"[STATE] ""become a sponsor"""
+2,Core state-based,state,"[STATE] ""sponsorship opportunities"""
+2,Core state-based,state,"[STATE] ""event sponsors"""
+2,Core state-based,state,"[STATE] ""nonprofit sponsors"""
+2,Core state-based,state,"[STATE] ""school sponsors"""
+2,Core state-based,state,"[STATE] ""festival sponsors"""
+2,Core state-based,state,"[STATE] ""community sponsors"""
+2,Core state-based,state,"[STATE] ""sponsor package"""
+2,Core state-based,state,"[STATE] ""sponsorship pdf"""
+3,High-value operator (city),city,"site:.org [CITY] [STATE] ""our sponsors"""
+3,High-value operator (city),city,"site:.org [CITY] [STATE] ""become a sponsor"""
+3,High-value operator (city),city,inurl:sponsor [CITY] [STATE]
+3,High-value operator (city),city,filetype:pdf [CITY] [STATE] sponsorship
+3,High-value operator (state),state,"site:.org [STATE] ""our sponsors"""
+3,High-value operator (state),state,"site:.org [STATE] ""become a sponsor"""
+3,High-value operator (state),state,inurl:sponsor [STATE]
+3,High-value operator (state),state,filetype:pdf [STATE] sponsorship
+4,Nearby relevance,city,"[NEARBY CITY] [STATE] ""our sponsors"""
+4,Nearby relevance,city,"[NEARBY CITY] [STATE] ""sponsorship opportunities"""
+4,Nearby relevance,state,[METRO] sponsors
+4,Nearby relevance,state,"[METRO] ""our sponsors"""
+5,Core county-based,county,"[COUNTY] [STATE] ""become a sponsor"""
+5,Core county-based,county,"[COUNTY] [STATE] ""sponsorship opportunities"""
+5,Core county-based,county,"[COUNTY] [STATE] ""our sponsors"""
+5,Core county-based,county,"[COUNTY] [STATE] ""community sponsors"""
+5,Core county-based,county,"[COUNTY] [STATE] ""event sponsors"""
+5,Core county-based,county,"[COUNTY] [STATE] ""nonprofit sponsors"""

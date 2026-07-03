@@ -27,15 +27,20 @@ export interface ClientInputs {
   client_outreach_email?: string;
 }
 
+/** Which geographic level a query was generated for. */
+export type QueryScope = "city" | "county" | "state";
+
 export interface QueryBankRow {
-  class: 1 | 2 | 3 | 4;
+  class: 1 | 2 | 3 | 4 | 5;
   class_name: string;
+  scope: QueryScope;
   query: string;
 }
 
 export interface RenderedQuery {
-  class: 1 | 2 | 3 | 4;
+  class: 1 | 2 | 3 | 4 | 5;
   class_name: string;
+  scope: QueryScope;
   template: string;
   query: string;
   target_city: string;
@@ -52,6 +57,8 @@ export interface SerpResult {
   search_query_used: string;
   target_city: string;
   target_state: string;
+  /** Which query bucket (city/county/state) produced this result. */
+  query_scope?: QueryScope;
 }
 
 export interface AhrefsMetrics {
@@ -188,8 +195,13 @@ export interface Opportunity {
   "Sponsorship URL": string;
   "Sponsor Page URL": string;
   City: string;
+  County: string;
   State: string;
   Location: string;
+  "Source Query Scopes": string;
+  "Resolved Location Scope": QueryScope | "unclear";
+  "Location Confidence": "high" | "medium" | "low";
+  "Location Evidence": string;
   "Local Relevance Rating": LocalRelevanceRating;
   "Local Relevance Notes": string;
   "Current Sponsors Displayed Publicly": YesNo | "Unknown";

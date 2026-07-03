@@ -6,7 +6,8 @@ import {
 } from "@/lib/db";
 import { domainMetrics } from "@/lib/ahrefs";
 import { crawlCandidate } from "@/lib/crawl";
-import type { ClientInputs } from "@/lib/types";
+import { resolveLocation } from "@/lib/locationResolve";
+import type { ClientInputs, QueryScope } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -103,8 +104,9 @@ export async function PATCH(
       const stubInputs = {
         client_business_name: "",
         client_website_url: "",
-        client_primary_city: existing.city,
+        client_primary_city: existing.city || "",
         client_state: existing.state,
+        county: existing.county || undefined,
         client_niche: "",
         preferred_landing_page_url: "",
         maximum_approved_budget: 0,
@@ -128,6 +130,29 @@ export async function PATCH(
         ? `Refresh: could not re-verify sponsorship page (${(crawl as { crawlError?: string }).crawlError}). Existing values kept.`
         : "Refreshed from live site and DR lookup.";
 
+      // Re-resolve location from the freshly crawled page — an old record
+      // marked "statewide" gets corrected to the specific city/county if the
+      // refreshed content now shows clear evidence of one (never the reverse:
+      // human notes and a confirmed location are never silently overwritten
+      // with a less specific guess).
+      const location = crawlFailed
+        ? undefined
+        : resolveLocation({
+            sourceScope: (existing.resolved_location_scope as QueryScope) || "state",
+            title: existing.opportunity_name || "",
+            url: existing.sponsorship_url,
+            domain: existing.domain,
+            scrapedText: [
+              (crawl as { crawlNotes?: string }).crawlNotes,
+              (crawl as { opportunityType?: string }).opportunityType,
+              (crawl as { linkEvidence?: string }).linkEvidence,
+              (crawl as { freshnessSiteQualityNotes?: string }).freshnessSiteQualityNotes,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            inputs: stubInputs,
+          });
+
       const success = await refreshOpportunity(id, {
         dr: metrics.dr,
         organic_traffic: metrics.organic_traffic,
@@ -139,6 +164,7 @@ export async function PATCH(
         freshness_notes: crawlFailed
           ? undefined
           : (crawl as { freshnessSiteQualityNotes?: string }).freshnessSiteQualityNotes,
+        location,
         note,
       });
 

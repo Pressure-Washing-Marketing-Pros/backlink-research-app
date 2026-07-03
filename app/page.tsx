@@ -427,6 +427,7 @@ export default function Home() {
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="px-3 py-2">Class</th>
+                    <th className="px-3 py-2">Scope</th>
                     <th className="px-3 py-2">Target</th>
                     <th className="px-3 py-2">Query</th>
                   </tr>
@@ -435,7 +436,10 @@ export default function Home() {
                   {queryPreview.map((q, index) => (
                     <tr key={`${q.query}-${index}`}>
                       <td className="px-3 py-2 font-mono text-xs">{q.class}</td>
-                      <td className="px-3 py-2">{q.target_city}, {q.target_state}</td>
+                      <td className="px-3 py-2 capitalize">{q.scope}</td>
+                      <td className="px-3 py-2">
+                        {q.scope === "state" ? q.target_state : `${q.target_city}, ${q.target_state}`}
+                      </td>
                       <td className="px-3 py-2 break-words">{q.query}</td>
                     </tr>
                   ))}
@@ -514,6 +518,7 @@ export default function Home() {
                       "Decision",
                       "Opportunity",
                       "Domain",
+                      "Location",
                       "Relevance",
                       "DR",
                       "Traffic",
@@ -558,6 +563,12 @@ export default function Home() {
                             </button>
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{o.Domain}</td>
+                          <td className="px-3 py-2 text-xs">
+                            {o.Location}
+                            <span className="ml-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                              {o["Resolved Location Scope"]}
+                            </span>
+                          </td>
                           <td className="px-3 py-2">{o["Local Relevance Rating"]}</td>
                           <td className="px-3 py-2 tabular-nums">{String(o.DR)}</td>
                           <td className="px-3 py-2 tabular-nums">{String(o.Traffic)}</td>
@@ -567,7 +578,7 @@ export default function Home() {
                         </tr>
                         {expandedRows[rowKey] && (
                           <tr className="bg-zinc-50 dark:bg-zinc-950">
-                            <td colSpan={10} className="px-3 py-3 text-sm text-zinc-700 dark:text-zinc-300">
+                            <td colSpan={11} className="px-3 py-3 text-sm text-zinc-700 dark:text-zinc-300">
                               <div className="grid gap-3 md:grid-cols-2">
                                 <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                                   <div className="text-xs uppercase text-zinc-500">Opportunity details</div>
