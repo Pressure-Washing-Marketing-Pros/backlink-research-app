@@ -37,3 +37,7 @@ class,class_name,scope,query
 5,Core county-based,county,"[COUNTY] [STATE] ""community sponsors"""
 5,Core county-based,county,"[COUNTY] [STATE] ""event sponsors"""
 5,Core county-based,county,"[COUNTY] [STATE] ""nonprofit sponsors"""
+1,Core city-based,city,[CITY] [STATE] sponsorship opportunities
+2,Core state-based,state,[STATE] sponsorship opportunities
+5,Core county-based,county,[COUNTY] sponsorship opportunities
+1,Core city-based,city,"[CITY] [STATE] sponsorship opportunities ""website link"""
