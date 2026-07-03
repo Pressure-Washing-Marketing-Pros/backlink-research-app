@@ -30,6 +30,7 @@ function fail(
  * Fetch HTML from URL using a simple HEAD/GET. Claude will handle redirects.
  */
 async function fetchHtml(url: string, attempt = 0): Promise<string> {
+  const signal = AbortSignal.timeout(15000);
   const res = await fetch(url, {
     method: "GET",
     headers: {
@@ -38,7 +39,7 @@ async function fetchHtml(url: string, attempt = 0): Promise<string> {
       Accept: "text/html,application/xhtml+xml",
     },
     redirect: "follow",
-    timeout: 15000,
+    signal,
   });
 
   if (!res.ok && attempt < 1) {
