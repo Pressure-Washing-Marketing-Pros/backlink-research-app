@@ -77,6 +77,18 @@ export default function Home() {
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  async function parseApiResponse<T>(res: Response): Promise<T> {
+    const text = await res.text();
+    if (!text) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      // Some server/runtime failures return plain text; normalize it to an
+      // object shape so callers can surface a useful error message.
+      return { error: text } as T;
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -91,7 +103,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(toClientInputs(form)),
       });
-      const data = (await res.json()) as RunResult | ValidationError | { error: string };
+      const data = await parseApiResponse<RunResult | ValidationError | { error: string }>(res);
       if ("status" in data && data.status === "Missing Required Inputs") {
         setMissing(data.missing_fields);
         return;
@@ -142,7 +154,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(toClientInputs(form)),
       });
-      const data = await res.json();
+      const data = await parseApiResponse<{ queries?: RenderedQuery[]; error?: string; missing_fields?: string[] }>(res);
       if (!res.ok) {
         if (data?.missing_fields) {
           setPreviewError("Missing required inputs for query preview.");
@@ -208,11 +220,11 @@ export default function Home() {
           clientName: result.summary.client,
         }),
       });
-      const data = await res.json();
+      const data = await parseApiResponse<{ saved_count?: number; error?: string }>(res);
       if (!res.ok) {
         throw new Error(data.error || "Failed to save opportunities");
       }
-      setSaveSuccess(`Successfully saved ${data.saved_count} opportunities to inventory!`);
+      setSaveSuccess(`Successfully saved ${data.saved_count ?? 0} opportunities to inventory!`);
       setShowSaveDialog(false);
     } catch (err) {
       alert(`Error saving to inventory: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -226,7 +238,7 @@ export default function Home() {
       try {
         const res = await fetch("/api/status");
         if (!res.ok) throw new Error("Unable to load status");
-        const json = await res.json();
+        const json = await parseApiResponse<{ ready: boolean; missing: string[]; message: string }>(res);
         setStatus(json);
       } catch (err) {
         setStatus({ ready: false, missing: [], message: err instanceof Error ? err.message : "Unknown error" });
