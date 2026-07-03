@@ -39,17 +39,47 @@ async function ahrefsGet(pathAndQuery: string, attempt = 0): Promise<unknown> {
   }
 }
 
+function toFiniteNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/,/g, "").trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function pickNumber(obj: unknown, keys: string[]): number | null {
-  if (!obj || typeof obj !== "object") return null;
-  const o = obj as Record<string, unknown>;
-  for (const k of keys) {
-    const v = o[k];
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (v && typeof v === "object") {
-      const inner = pickNumber(v, keys);
+  if (obj === null || obj === undefined) return null;
+
+  const direct = toFiniteNumber(obj);
+  if (direct !== null) return direct;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const inner = pickNumber(item, keys);
       if (inner !== null) return inner;
     }
+    return null;
   }
+
+  if (typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+
+  // Prefer explicit key matches first.
+  for (const k of keys) {
+    if (!(k in o)) continue;
+    const n = toFiniteNumber(o[k]);
+    if (n !== null) return n;
+    const inner = pickNumber(o[k], keys);
+    if (inner !== null) return inner;
+  }
+
+  // Fallback: deep walk all nested properties for the same keys.
+  for (const value of Object.values(o)) {
+    const inner = pickNumber(value, keys);
+    if (inner !== null) return inner;
+  }
+
   return null;
 }
 
@@ -72,8 +102,17 @@ export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
     ]);
 
     const dr = pickNumber(drJson, ["domain_rating"]);
-    const organic_traffic = pickNumber(metricsJson, ["org_traffic", "organic_traffic"]);
-    const referring_domains = pickNumber(metricsJson, ["refdomains", "referring_domains"]);
+    const organic_traffic = pickNumber(metricsJson, [
+      "org_traffic",
+      "organic_traffic",
+      "organic_search_traffic",
+      "traffic",
+    ]);
+    const referring_domains = pickNumber(metricsJson, [
+      "refdomains",
+      "referring_domains",
+      "ref_domains",
+    ]);
 
     const errs: string[] = [];
     if (drJson && typeof drJson === "object" && "__error" in drJson) {
