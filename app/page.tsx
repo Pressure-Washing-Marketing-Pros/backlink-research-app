@@ -422,12 +422,21 @@ export default function Home() {
                 <div className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900">
                   {queryPreview.length} queries
                 </div>
-                <a
-                  href="/dashboard"
+                {result && (
+                  <a
+                    href="#results-section"
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                  >
+                    ↓ Back to Results
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setQueryPreview(null)}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                 >
-                  ← Back to Inventory Dashboard
-                </a>
+                  Close Preview
+                </button>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -478,7 +487,7 @@ export default function Home() {
         )}
 
         {result && (
-          <section className="mt-10">
+          <section id="results-section" className="mt-10">
             <SummaryPanel result={result} mergedOpportunities={mergedOpportunities} />
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -515,12 +524,6 @@ export default function Home() {
               >
                 Export non-rejected to CSV
               </button>
-              <a
-                href="/dashboard"
-                className="ml-2 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                ← Back to Inventory Dashboard
-              </a>
             </div>
 
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -557,7 +560,16 @@ export default function Home() {
                         <tr>
                           <td className="px-3 py-2 font-mono tabular-nums">{o.Score}</td>
                           <td className="px-3 py-2">
-                            <DecisionBadge decision={o.Decision} />
+                            <DecisionQuickActions
+                              decision={o.Decision}
+                              onChange={(next) =>
+                                handleRowChange(rowKey, {
+                                  Decision: next,
+                                  "Human Review Trigger":
+                                    next === "Reject" ? "Manual reject" : o["Human Review Trigger"],
+                                })
+                              }
+                            />
                           </td>
                           <td className="px-3 py-2">
                             <a
@@ -721,16 +733,50 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function DecisionBadge({ decision }: { decision: Decision }) {
-  const styles: Record<Decision, string> = {
-    Approve: "bg-emerald-100 text-emerald-800",
-    "Needs Human Review": "bg-amber-100 text-amber-800",
-    Reject: "bg-red-100 text-red-800",
-  };
+const DECISION_BADGE_STYLES: Record<Decision, string> = {
+  Approve: "bg-emerald-100 text-emerald-800",
+  "Needs Human Review": "bg-amber-100 text-amber-800",
+  Reject: "bg-red-100 text-red-800",
+};
+
+const DECISION_SHORT_LABEL: Record<Decision, string> = {
+  Approve: "✓ Approve",
+  "Needs Human Review": "⊙ Review",
+  Reject: "✕ Reject",
+};
+
+const ALL_DECISIONS: Decision[] = ["Approve", "Needs Human Review", "Reject"];
+
+// Editable directly from the results row — no need to open Details just to
+// change status.
+function DecisionQuickActions({
+  decision,
+  onChange,
+}: {
+  decision: Decision;
+  onChange: (next: Decision) => void;
+}) {
   return (
-    <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${styles[decision]}`}>
-      {decision}
-    </span>
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Decision status">
+      {ALL_DECISIONS.map((d) => {
+        const active = d === decision;
+        return (
+          <button
+            key={d}
+            type="button"
+            onClick={() => !active && onChange(d)}
+            title={`Set decision to ${d}`}
+            className={`whitespace-nowrap rounded px-2 py-1 text-[11px] font-medium border transition-colors ${
+              active
+                ? `${DECISION_BADGE_STYLES[d]} border-transparent ring-1 ring-offset-1 ring-zinc-400`
+                : "bg-white text-zinc-500 border-zinc-300 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            }`}
+          >
+            {DECISION_SHORT_LABEL[d]}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
