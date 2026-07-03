@@ -57,6 +57,12 @@ const SCRAPED_TEXT_PREVIEW_CHARS = 2000;
 const SCRAPE_URL_TIMEOUT_MS = 25000;
 const CLAUDE_ASSIST_TIMEOUT_MS = 12000;
 const DEFAULT_MAX_CLAUDE_ASSISTS_PER_RUN = 3;
+const DEFAULT_MAX_QUERIES_PER_RUN = 6;
+
+function maxQueriesPerRun(): number {
+  const raw = Number(process.env.MAX_QUERIES_PER_RUN);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_QUERIES_PER_RUN;
+}
 
 function log(message: string): void {
   console.log(`[sponsorship-research] ${message}`);
@@ -369,7 +375,12 @@ export async function runResearch(
   log(`Using scraper: ${scraper.name} (strategy: ${config.strategy})`);
   const SCRAPE_CONCURRENCY = config.concurrency;
 
-  const queries = renderQueries(inputs);
+  const allQueries = renderQueries(inputs);
+  const queryCap = maxQueriesPerRun();
+  const queries = allQueries.slice(0, queryCap);
+  if (allQueries.length > queries.length) {
+    log(`Query cap (${queryCap}) active — using ${queries.length}/${allQueries.length} queries this run`);
+  }
 
   // 1. DataForSEO SERP results
   const serpBatches = await runWithConcurrency(queries, SERP_CONCURRENCY, async (q) => {
