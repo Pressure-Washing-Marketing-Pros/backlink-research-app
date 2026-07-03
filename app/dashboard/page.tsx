@@ -22,13 +22,6 @@ interface SearchResponse {
   total: number;
 }
 
-const DECISION_OPTIONS = ["Approve", "Needs Human Review", "Reject"] as const;
-
-const DECISION_SHORT_LABEL: Record<(typeof DECISION_OPTIONS)[number], string> = {
-  Approve: "✓ Approve",
-  "Needs Human Review": "⊙ Review",
-  Reject: "✕ Reject",
-};
 
 const SCOPE_OPTIONS = [
   { value: "", label: "All" },
@@ -109,7 +102,6 @@ export default function Dashboard() {
     cities: string[];
     states: string[];
   } | null>(null);
-  const [savingDecisionId, setSavingDecisionId] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -243,25 +235,6 @@ export default function Dashboard() {
     } catch (err) {
       console.error("Error marking opportunity as used:", err);
       alert("Failed to mark opportunity as used");
-    }
-  }, []);
-
-  const handleDecisionChange = useCallback(async (id: string, decision: string) => {
-    setSavingDecisionId(id);
-    try {
-      const res = await fetch(`/api/opportunities/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "setDecision", decision }),
-      });
-      if (!res.ok) throw new Error("Failed to update decision");
-      setOpportunities((prev) =>
-        prev.map((o) => (o.id === id ? { ...o, decision } : o)),
-      );
-    } catch (err) {
-      alert(`Failed to update decision: ${err instanceof Error ? err.message : "Unknown error"}`);
-    } finally {
-      setSavingDecisionId(null);
     }
   }, []);
 
@@ -746,30 +719,13 @@ export default function Dashboard() {
                                 </span>
                               </td>
                               <td className="px-4 py-4 text-sm">
-                                <div className="flex flex-wrap gap-1" role="group" aria-label="Decision status">
-                                  {DECISION_OPTIONS.map((d) => {
-                                    const active = opp.decision === d;
-                                    return (
-                                      <button
-                                        key={d}
-                                        type="button"
-                                        onClick={() => !active && handleDecisionChange(opp.id, d)}
-                                        disabled={savingDecisionId === opp.id}
-                                        title={`Set decision to ${d}`}
-                                        className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors disabled:opacity-50 disabled:cursor-wait ${
-                                          active
-                                            ? `${decisionBadgeClass(d)} border-transparent ring-1 ring-offset-1 ring-gray-400`
-                                            : "bg-white text-gray-500 border-gray-300 hover:bg-gray-50"
-                                        }`}
-                                      >
-                                        {DECISION_SHORT_LABEL[d]}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {savingDecisionId === opp.id && (
-                                  <div className="mt-1 text-[11px] text-gray-400">Saving…</div>
-                                )}
+                                {/* Read-only here — decisions are set on the Sponsorship Researcher
+                                    results page before a run is saved to inventory. */}
+                                <span
+                                  className={`inline-block px-2 py-1 rounded text-[11px] font-medium ${decisionBadgeClass(opp.decision)}`}
+                                >
+                                  {opp.decision ?? "Unknown"}
+                                </span>
                                 {opp.human_review_trigger && opp.human_review_trigger !== "None" && (
                                   <div className="mt-1 text-[11px] text-gray-500 max-w-xs">
                                     {opp.human_review_trigger}
