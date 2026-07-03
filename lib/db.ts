@@ -465,6 +465,22 @@ export async function markOpportunityAsUsed(
   return rows.length > 0;
 }
 
+export async function deleteOpportunity(id: string): Promise<boolean> {
+  const sql = getSql();
+  const rows = await sql.query(
+    `DELETE FROM opportunities WHERE id = $1 RETURNING id`,
+    [id],
+  );
+  return rows.length > 0;
+}
+
+/** Deletes every opportunity in the inventory (research_runs history is kept). */
+export async function clearInventory(): Promise<{ deletedCount: number }> {
+  const sql = getSql();
+  const rows = await sql.query(`DELETE FROM opportunities RETURNING id`);
+  return { deletedCount: rows.length };
+}
+
 export async function updateOpportunityDecision(
   id: string,
   decision: string,

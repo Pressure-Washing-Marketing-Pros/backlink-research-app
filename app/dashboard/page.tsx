@@ -107,6 +107,8 @@ export default function Dashboard() {
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
 
   // Search/filter state
   const [cityFilter, setCityFilter] = useState("");
@@ -281,6 +283,46 @@ export default function Dashboard() {
     }
   }, []);
 
+  const handleDelete = useCallback(async (id: string, label: string) => {
+    if (!confirm(`Remove "${label}" from the inventory? This can't be undone.`)) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/opportunities/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Delete failed");
+      }
+      setOpportunities((prev) => prev.filter((o) => o.id !== id));
+    } catch (err) {
+      alert(`Failed to delete: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }, []);
+
+  const handleClearInventory = useCallback(async () => {
+    const typed = prompt(
+      'This permanently deletes every opportunity in the inventory. Type "DELETE ALL" to confirm:',
+    );
+    if (typed !== "DELETE ALL") return;
+    setClearingAll(true);
+    try {
+      const res = await fetch("/api/opportunities/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE ALL" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Clear failed");
+      setOpportunities([]);
+      alert(`Cleared ${data.deletedCount} opportunities from the inventory.`);
+    } catch (err) {
+      alert(`Failed to clear inventory: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setClearingAll(false);
+    }
+  }, []);
+
   const exportCsv = useCallback(async () => {
     setExporting(true);
     try {
@@ -420,13 +462,22 @@ export default function Dashboard() {
             <div className="bg-white rounded-lg shadow-sm p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-                <button
-                  onClick={exportCsv}
-                  disabled={exporting}
-                  className="px-3 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {exporting ? "Exporting…" : "Export CSV (current filters)"}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={exportCsv}
+                    disabled={exporting}
+                    className="px-3 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {exporting ? "Exporting…" : "Export CSV (current filters)"}
+                  </button>
+                  <button
+                    onClick={handleClearInventory}
+                    disabled={clearingAll}
+                    className="px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {clearingAll ? "Clearing…" : "Clear Inventory"}
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -752,6 +803,13 @@ export default function Dashboard() {
                                   className="text-gray-600 hover:text-gray-900 font-medium"
                                 >
                                   Reuse
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(opp.id, opp.opportunity_name || opp.domain)}
+                                  disabled={deletingId === opp.id}
+                                  className="text-red-600 hover:text-red-900 font-medium disabled:opacity-50"
+                                >
+                                  {deletingId === opp.id ? "Deleting…" : "Delete"}
                                 </button>
                               </td>
                             </tr>

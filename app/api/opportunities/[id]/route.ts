@@ -3,6 +3,7 @@ import {
   markOpportunityAsUsed,
   updateOpportunityDecision,
   refreshOpportunity,
+  deleteOpportunity,
 } from "@/lib/db";
 import { domainMetrics } from "@/lib/ahrefs";
 import { crawlCandidate } from "@/lib/crawl";
@@ -185,6 +186,27 @@ export async function PATCH(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error updating opportunity:", error);
+    return Response.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const success = await deleteOpportunity(id);
+    if (!success) {
+      return Response.json(
+        { error: "Opportunity not found" },
+        { status: 404 },
+      );
+    }
+    return Response.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error deleting opportunity:", error);
     return Response.json({ error: message }, { status: 500 });
   }
 }
