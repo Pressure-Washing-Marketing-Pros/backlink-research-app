@@ -3,6 +3,7 @@ import type { ClientInputs } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+export const preferredRegion = "iad1";
 
 export async function POST(request: Request) {
   let body: Partial<ClientInputs>;

@@ -32,7 +32,6 @@ import {
   DEFAULT_CLIENT_BUDGET,
   DR_MINIMUM,
   isCrawlCacheFresh,
-  maxFirecrawlUrlsPerRun,
 } from "@/lib/sponsorshipConfig";
 import { renderQueries, validateInputs } from "@/lib/queryBank";
 import type {
@@ -384,11 +383,11 @@ export async function runResearch(
 
   // 5. Per-run Firecrawl cap — highest DR first
   passedDr.sort((a, b) => (metricsFor(b).dr ?? 0) - (metricsFor(a).dr ?? 0));
-  const cap = maxFirecrawlUrlsPerRun();
+  const cap = config.maxUrlsPerRun;
   const toScrape = passedDr.slice(0, cap);
   const overCap = passedDr.slice(cap);
   if (overCap.length > 0) {
-    log(`Per-run Firecrawl cap (${cap}) reached — ${overCap.length} qualified URLs marked for review without scraping`);
+    log(`Per-run scrape cap (${cap}) reached — ${overCap.length} qualified URLs marked for review without scraping`);
   }
 
   // 6. Cache lookup (degrades gracefully if the DB is unavailable)

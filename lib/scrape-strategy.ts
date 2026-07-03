@@ -21,19 +21,35 @@ export interface ScrapeConfig {
   strategy: ScrapeStrategy;
   /** Max concurrent requests (Firecrawl free: 2, Claude has higher limits) */
   concurrency: number;
+  /** Max URLs to scrape in a single run to keep request time bounded. */
+  maxUrlsPerRun: number;
   /** Enable caching layer */
   cacheEnabled: boolean;
   /** Cache TTL in days */
   cacheTtlDays: number;
 }
 
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 export function getConfig(): ScrapeConfig {
+  const strategy = getScrapeStrategy();
+  const firecrawlCap = positiveInt(process.env.FIRECRAWL_MAX_URLS_PER_RUN, 50);
+  const claudeCap = positiveInt(process.env.CLAUDE_MAX_URLS_PER_RUN, 10);
+  const fallbackCap = positiveInt(process.env.CLAUDE_FALLBACK_MAX_URLS_PER_RUN, 20);
+
   return {
-    strategy: getScrapeStrategy(),
-    concurrency:
-      process.env.SCRAPE_STRATEGY === "claude"
-        ? 5 // Claude can handle higher concurrency
-        : 2, // Firecrawl free plan: 2 concurrent
+    strategy,
+    // Keep concurrency conservative for serverless time budgets.
+    concurrency: strategy === "claude" ? 2 : 2,
+    maxUrlsPerRun:
+      strategy === "claude"
+        ? claudeCap
+        : strategy === "claude-fallback"
+          ? fallbackCap
+          : firecrawlCap,
     cacheEnabled: true,
     cacheTtlDays: Number(process.env.CRAWL_CACHE_TTL_DAYS) || 60,
   };
