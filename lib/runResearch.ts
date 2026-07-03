@@ -49,12 +49,12 @@ import type {
   ValidationError,
 } from "@/lib/types";
 
-const MAX_CANDIDATES_PER_QUERY = 30;
-const SERP_CONCURRENCY = 3;
+const DEFAULT_MAX_CANDIDATES_PER_QUERY = 8;
+const DEFAULT_SERP_CONCURRENCY = 2;
 // Kept low — Ahrefs rate-limits hard (HTTP 429) at higher parallelism.
-const AHREFS_CONCURRENCY = 2;
+const DEFAULT_AHREFS_CONCURRENCY = 1;
 const SCRAPED_TEXT_PREVIEW_CHARS = 2000;
-const SCRAPE_URL_TIMEOUT_MS = 25000;
+const DEFAULT_SCRAPE_URL_TIMEOUT_MS = 8000;
 const CLAUDE_ASSIST_TIMEOUT_MS = 12000;
 const DEFAULT_MAX_CLAUDE_ASSISTS_PER_RUN = 3;
 const DEFAULT_MAX_QUERIES_PER_RUN = 6;
@@ -62,6 +62,34 @@ const DEFAULT_MAX_QUERIES_PER_RUN = 6;
 function maxQueriesPerRun(): number {
   const raw = Number(process.env.MAX_QUERIES_PER_RUN);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_QUERIES_PER_RUN;
+}
+
+function maxCandidatesPerQuery(): number {
+  const raw = Number(process.env.MAX_CANDIDATES_PER_QUERY);
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_MAX_CANDIDATES_PER_QUERY;
+}
+
+function serpConcurrency(): number {
+  const raw = Number(process.env.SERP_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_SERP_CONCURRENCY;
+}
+
+function ahrefsConcurrency(): number {
+  const raw = Number(process.env.AHREFS_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_AHREFS_CONCURRENCY;
+}
+
+function scrapeUrlTimeoutMs(): number {
+  const raw = Number(process.env.SCRAPE_URL_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_SCRAPE_URL_TIMEOUT_MS;
 }
 
 function scrapeWhenDrUnavailable(): boolean {
@@ -377,6 +405,10 @@ export async function runResearch(
   const config = getConfig();
   const scraper = await createScraper(config.strategy);
   const claudeAssist = getClaudeAssistConfig();
+  const maxDepth = maxCandidatesPerQuery();
+  const serpConc = serpConcurrency();
+  const ahrefsConc = ahrefsConcurrency();
+  const scrapeTimeoutMs = scrapeUrlTimeoutMs();
   log(`Using scraper: ${scraper.name} (strategy: ${config.strategy})`);
   const SCRAPE_CONCURRENCY = config.concurrency;
 
@@ -388,15 +420,15 @@ export async function runResearch(
   }
 
   // 1. DataForSEO SERP results
-  const serpBatches = await runWithConcurrency(queries, SERP_CONCURRENCY, async (q) => {
+  const serpBatches = await runWithConcurrency(queries, serpConc, async (q) => {
     try {
       const results = await serpQuery({
         query: q.query,
         target_city: q.target_city,
         target_state: q.target_state,
-        depth: MAX_CANDIDATES_PER_QUERY,
+        depth: maxDepth,
       });
-      return results.slice(0, MAX_CANDIDATES_PER_QUERY);
+      return results.slice(0, maxDepth);
     } catch (e) {
       console.error(`SERP query failed: ${q.query}`, e);
       return [] as SerpResult[];
@@ -443,7 +475,7 @@ export async function runResearch(
 
   // 4. Ahrefs DR gate — before Firecrawl, to save scrape credits
   const uniqueDomains = Array.from(new Set(clean.map((c) => c.serp.root_domain)));
-  const metricsMap = await domainMetricsBatch(uniqueDomains, AHREFS_CONCURRENCY);
+  const metricsMap = await domainMetricsBatch(uniqueDomains, ahrefsConc);
   const metricsFor = (c: Candidate): AhrefsMetrics =>
     metricsMap.get(c.serp.root_domain) ?? NULL_METRICS;
 
@@ -504,8 +536,8 @@ export async function runResearch(
 
       const res = await withTimeout(
         scraper.scrapeUrl(c.fetchUrl),
-        SCRAPE_URL_TIMEOUT_MS,
-        `Scrape timeout after ${Math.round(SCRAPE_URL_TIMEOUT_MS / 1000)}s`,
+        scrapeTimeoutMs,
+        `Scrape timeout after ${Math.round(scrapeTimeoutMs / 1000)}s`,
       ).catch((e: Error) => ({
         ok: false,
         status: 0,
