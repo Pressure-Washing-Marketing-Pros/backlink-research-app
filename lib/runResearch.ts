@@ -53,9 +53,28 @@ const SERP_CONCURRENCY = 3;
 // Kept low — Ahrefs rate-limits hard (HTTP 429) at higher parallelism.
 const AHREFS_CONCURRENCY = 2;
 const SCRAPED_TEXT_PREVIEW_CHARS = 2000;
+const SCRAPE_URL_TIMEOUT_MS = 25000;
 
 function log(message: string): void {
   console.log(`[sponsorship-research] ${message}`);
+}
+
+async function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function runWithConcurrency<T, R>(
@@ -421,7 +440,19 @@ export async function runResearch(
         };
       }
 
-      const res = await scraper.scrapeUrl(c.fetchUrl);
+      const res = await withTimeout(
+        scraper.scrapeUrl(c.fetchUrl),
+        SCRAPE_URL_TIMEOUT_MS,
+        `Scrape timeout after ${Math.round(SCRAPE_URL_TIMEOUT_MS / 1000)}s`,
+      ).catch((e: Error) => ({
+        ok: false,
+        status: 0,
+        pageTitle: "",
+        finalUrl: c.fetchUrl,
+        markdown: "",
+        error: e.message,
+        cacheable: false,
+      }));
       if (res.ok) scrapeOk++;
       else scrapeFail++;
 
