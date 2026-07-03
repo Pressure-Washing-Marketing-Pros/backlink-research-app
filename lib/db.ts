@@ -839,12 +839,15 @@ export async function getCitiesAndStates(state?: string): Promise<{
 }> {
   const sql = getSql();
 
+  // Cities are only ever scoped to a single state — without one, "all
+  // cities" would mix locations across states with no way to tell them
+  // apart in a plain city dropdown, so we return none until a state is chosen.
   const cityRows = state
     ? await sql.query(
         `SELECT DISTINCT city FROM opportunities WHERE state = $1 AND city <> '' ORDER BY city`,
         [state],
       )
-    : await sql.query(`SELECT DISTINCT city FROM opportunities WHERE city <> '' ORDER BY city`);
+    : [];
   const stateRows = await sql.query(
     `SELECT DISTINCT state FROM opportunities ORDER BY state`,
   );

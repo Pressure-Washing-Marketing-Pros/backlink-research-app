@@ -521,14 +521,15 @@ export default function Dashboard() {
                   </label>
                   <select
                     value={cityFilter}
+                    disabled={!stateFilter}
                     onChange={(e) => {
                       setCityFilter(e.target.value);
                       setCurrentPage(0);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                   >
-                    <option value="">{stateFilter ? "All cities in state" : "All Cities"}</option>
-                    {citiesAndStates?.cities.map((city) => (
+                    <option value="">{stateFilter ? `All cities in ${stateFilter}` : "Select a state first"}</option>
+                    {stateFilter && citiesAndStates?.cities.map((city) => (
                       <option key={city} value={city}>
                         {city}
                       </option>
