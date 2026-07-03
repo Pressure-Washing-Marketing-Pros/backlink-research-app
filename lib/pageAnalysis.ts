@@ -431,6 +431,13 @@ export function decideStatus(input: StrictDecisionInput): StrictDecision {
   ): StrictDecision => ({ approvalStatus, approvalReason, withinBudget, rejectionCategory });
 
   if (input.dr === null) {
+    if (input.firecrawlStatus === "success" || input.firecrawlStatus === "cached") {
+      return verdict(
+        "review",
+        "Review: Ahrefs DR is unavailable. The page was scraped and analyzed, but authority could not be verified.",
+        "Unknown",
+      );
+    }
     return verdict(
       "review",
       "Review: Ahrefs DR is unavailable, so domain authority could not be verified. Not scraped, to save Firecrawl credits.",

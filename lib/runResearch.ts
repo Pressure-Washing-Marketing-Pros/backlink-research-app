@@ -64,6 +64,11 @@ function maxQueriesPerRun(): number {
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_QUERIES_PER_RUN;
 }
 
+function scrapeWhenDrUnavailable(): boolean {
+  const raw = process.env.SCRAPE_WHEN_DR_UNAVAILABLE?.toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 function log(message: string): void {
   console.log(`[sponsorship-research] ${message}`);
 }
@@ -455,11 +460,13 @@ export async function runResearch(
     `Ahrefs DR gate: ${passedDr.length} passed (DR >= ${DR_MINIMUM}), ${belowDr.length} rejected below threshold, ${drUnknown.length} DR unavailable (review, not scraped)`,
   );
 
-  // 5. Per-run Firecrawl cap — highest DR first
-  passedDr.sort((a, b) => (metricsFor(b).dr ?? 0) - (metricsFor(a).dr ?? 0));
+  // 5. Per-run scrape cap — highest DR first; optional DR-unknown scraping
+  const allowDrUnknownScrape = scrapeWhenDrUnavailable();
+  const scrapePool = [...passedDr, ...(allowDrUnknownScrape ? drUnknown : [])];
+  scrapePool.sort((a, b) => (metricsFor(b).dr ?? -1) - (metricsFor(a).dr ?? -1));
   const cap = config.maxUrlsPerRun;
-  const toScrape = passedDr.slice(0, cap);
-  const overCap = passedDr.slice(cap);
+  const toScrape = scrapePool.slice(0, cap);
+  const overCap = scrapePool.slice(cap);
   if (overCap.length > 0) {
     log(`Per-run scrape cap (${cap}) reached — ${overCap.length} qualified URLs marked for review without scraping`);
   }
@@ -752,6 +759,8 @@ export async function runResearch(
       purposeOf(c),
     );
   }
+  const scrapedOrCappedKeys = new Set<string>([...toScrape, ...overCap].map((c) => c.key));
+
   for (const c of overCap) {
     const metrics = metricsFor(c);
     const { rating } = classifyLocalRelevance(c.serp, inputs);
@@ -764,12 +773,18 @@ export async function runResearch(
     );
   }
   for (const c of drUnknown) {
+    if (scrapedOrCappedKeys.has(c.key)) continue;
     const { rating } = classifyLocalRelevance(c.serp, inputs);
     pushUnscraped(
       c,
       metricsFor(c),
       decideStatus({ ...baseStrictInput, dr: null, pagePurpose: purposeOf(c), localRelevance: rating }),
-      unscrapedCrawl(c.serp, "Not scraped: Ahrefs DR unavailable."),
+      unscrapedCrawl(
+        c.serp,
+        allowDrUnknownScrape
+          ? "Not scraped this run: per-run scrape cap reached before DR-unavailable candidates."
+          : "Not scraped: Ahrefs DR unavailable.",
+      ),
       purposeOf(c),
     );
   }
