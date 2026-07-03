@@ -206,11 +206,14 @@ export default function Home() {
     setSavingToInventory(true);
     setSaveSuccess(null);
     try {
+      // Send the merged opportunities (with any manual Approve/Review/Reject
+      // edits applied) — not the raw, unedited run result — so manual
+      // decisions actually persist to the inventory.
       const res = await fetch("/api/opportunities/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          runResult: result,
+          runResult: { ...result, opportunities: mergedOpportunities },
           clientName: result.summary.client,
         }),
       });
