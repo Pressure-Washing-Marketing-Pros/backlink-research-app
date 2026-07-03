@@ -74,4 +74,18 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_runs_client ON research_runs(client_name)`,
   `CREATE INDEX IF NOT EXISTS idx_runs_city_state ON research_runs(target_city, target_state)`,
   `CREATE INDEX IF NOT EXISTS idx_runs_created ON research_runs(created_at)`,
+  // Firecrawl scrape cache: keyed by normalized URL so the same page is not
+  // re-scraped within the cache window (saves free-plan credits). Failures
+  // are stored too, with a short TTL, so broken URLs aren't retried in-run.
+  `CREATE TABLE IF NOT EXISTS crawl_cache (
+      normalized_url TEXT PRIMARY KEY,
+      source_url TEXT NOT NULL,
+      final_url TEXT,
+      page_title TEXT,
+      scraped_text TEXT,
+      status TEXT NOT NULL,
+      error TEXT,
+      fetched_at BIGINT NOT NULL
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_crawl_cache_fetched ON crawl_cache(fetched_at)`,
 ];

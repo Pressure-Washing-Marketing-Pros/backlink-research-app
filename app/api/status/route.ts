@@ -5,6 +5,7 @@ export async function GET() {
   if (!process.env.DATAFORSEO_LOGIN) missing.push("DATAFORSEO_LOGIN");
   if (!process.env.DATAFORSEO_PASSWORD) missing.push("DATAFORSEO_PASSWORD");
   if (!process.env.AHREFS_API_TOKEN) missing.push("AHREFS_API_TOKEN");
+  if (!process.env.FIRECRAWL_API_KEY) missing.push("FIRECRAWL_API_KEY");
 
   return Response.json({
     ready: missing.length === 0,
@@ -12,6 +13,6 @@ export async function GET() {
     message:
       missing.length === 0
         ? "All required API environment variables are configured."
-        : "Missing required API environment variables for DataForSEO / Ahrefs.",
+        : "Missing required API environment variables for DataForSEO / Ahrefs / Firecrawl.",
   });
 }

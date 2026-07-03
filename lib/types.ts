@@ -91,6 +91,52 @@ export type LinkOpportunityStatus =
 export type PaymentType = "One-Time" | "Annual" | "Monthly" | "Recurring" | "Unknown";
 export type SubmissionMethod = "Form" | "Email" | "Phone" | "PDF Package" | "Unknown";
 export type Decision = "Approve" | "Reject" | "Needs Human Review";
+export type ApprovalStatus = "approved" | "review" | "rejected";
+
+/**
+ * Internal per-URL analysis produced by the strict scrape-and-match layer
+ * (Ahrefs DR gate → Firecrawl scrape → keyword/price matching). Attached to
+ * each Opportunity as `_analysis`; not part of the CSV export columns.
+ */
+export interface PageAnalysis {
+  normalizedUrl: string;
+  sourceUrl: string;
+  finalUrl: string;
+  domain: string;
+  ahrefsDR: number | null;
+  firecrawlStatus: "success" | "failed" | "cached" | "skipped";
+  pageTitle: string;
+  /** Preview only (first 2,000 chars) — full text lives in the crawl_cache table. */
+  scrapedText: string;
+  matchedSponsorshipTerms: string[];
+  matchedBacklinkTerms: string[];
+  matchedPricingTerms: string[];
+  detectedPrices: number[];
+  lowestDetectedPrice: number | null;
+  withinBudget: boolean | null;
+  approvalStatus: ApprovalStatus;
+  approvalReason: string;
+  analyzedAt: string;
+  crawlCached: boolean;
+}
+
+export interface PipelineStats {
+  serp_results: number;
+  after_dedup: number;
+  non_https: number;
+  spam_rejected: number;
+  dr_passed: number;
+  dr_rejected: number;
+  dr_unavailable: number;
+  firecrawl_attempted: number;
+  firecrawl_cached: number;
+  firecrawl_succeeded: number;
+  firecrawl_failed: number;
+  over_scrape_cap: number;
+  approved: number;
+  needs_review: number;
+  rejected: number;
+}
 
 export interface Opportunity {
   Client: string;
@@ -129,6 +175,8 @@ export interface Opportunity {
   "Search Query Used": string;
   "Last Checked": string;
   "Last Refreshed": string;
+  /** Internal strict-analysis result; excluded from OPPORTUNITY_COLUMNS/CSV. */
+  _analysis?: PageAnalysis;
 }
 
 export interface RunSummary {
@@ -141,6 +189,7 @@ export interface RunSummary {
   review_count: number;
   rejected_count: number;
   queries_used: string[];
+  pipeline_stats?: PipelineStats;
 }
 
 export interface RunResult {

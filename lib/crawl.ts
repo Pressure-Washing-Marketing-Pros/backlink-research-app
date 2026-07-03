@@ -154,7 +154,7 @@ function getPageText(doc: Document): string {
   return doc.body?.textContent ?? "";
 }
 
-function findEmails(text: string): string[] {
+export function findEmails(text: string): string[] {
   return Array.from(text.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)).map((m) => m[0]);
 }
 
@@ -173,7 +173,7 @@ function extractDollarAmount(text: string): string {
   return match?.[0] ?? "Unknown";
 }
 
-function parsePaymentType(text: string): PaymentType {
+export function parsePaymentType(text: string): PaymentType {
   const lower = text.toLowerCase();
   for (const [type, pattern] of PAYMENT_TYPE_PATTERNS) {
     if (pattern.test(lower)) return type;
@@ -189,7 +189,7 @@ function extractTierName(text: string): string {
   return "Unknown";
 }
 
-function classifyOpportunityType(text: string): string {
+export function classifyOpportunityType(text: string): string {
   const lower = text.toLowerCase();
   for (const [type, pattern] of OPPORTUNITY_TYPE_PATTERNS) {
     if (pattern.test(lower)) return type;

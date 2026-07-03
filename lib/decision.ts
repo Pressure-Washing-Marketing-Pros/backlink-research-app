@@ -121,7 +121,7 @@ function isObviousReject(serp: SerpResult, crawl: SponsorshipCrawlResult): strin
   return null;
 }
 
-function detectSensitiveCategory(
+export function detectSensitiveCategory(
   serp: SerpResult,
   crawl: SponsorshipCrawlResult,
 ): string | null {

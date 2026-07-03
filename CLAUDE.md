@@ -22,6 +22,8 @@ Sponsorship backlink research system. Discovers and evaluates sponsorship-style 
 - `npm run build` — production build
 - `npm run start` — serve production build
 - `npm run lint` — ESLint
+- `npm test` — rule-based validation cases for the strict page analyzer (`scripts/validateAnalysis.ts`)
+- `npm run migrate` — apply idempotent schema statements to Neon Postgres
 
 ## Required environment variables
 
@@ -30,6 +32,23 @@ Put these in `.env.local` (gitignored) for local dev, and mirror them in Vercel 
 - `DATAFORSEO_LOGIN` — DataForSEO account login (used in Basic auth)
 - `DATAFORSEO_PASSWORD` — DataForSEO account password (used in Basic auth)
 - `AHREFS_API_TOKEN` — Ahrefs API bearer token
+- `FIRECRAWL_API_KEY` — Firecrawl API key (strict page-scraping layer; free plan: 1,000 pages/mo, 2 concurrent requests)
+- `DATABASE_URL` — Neon Postgres (inventory + crawl cache)
+
+Optional tuning (defaults live in `lib/sponsorshipConfig.ts`):
+
+- `FIRECRAWL_MAX_URLS_PER_RUN` — per-run scrape cap (default 50)
+- `CRAWL_CACHE_TTL_DAYS` — successful-crawl reuse window in days (default 60)
+
+## Research pipeline (strict scrape-and-match)
+
+`lib/runResearch.ts` orders stages so paid APIs are spent last:
+DataForSEO SERP → URL normalize + dedup (`lib/urlNormalize.ts`) → spam-domain
+reject → Ahrefs DR gate (DR ≥ 25, `lib/sponsorshipConfig.ts`) → Firecrawl
+scrape with 60-day cache (`lib/firecrawl.ts`, `crawl_cache` table) → strict
+keyword/price matching on scraped content (`lib/pageAnalysis.ts`). Approval is
+never based on SERP titles/snippets or URL text — only scraped page content +
+DR. Missing core data always routes to review, never to approve.
 
 ## External inputs (provided, not yet wired up)
 

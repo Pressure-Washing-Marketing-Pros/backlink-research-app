@@ -469,6 +469,74 @@ export async function refreshOpportunity(
 }
 
 // ---------------------------------------------------------------------------
+// Firecrawl scrape cache
+// ---------------------------------------------------------------------------
+
+export interface CrawlCacheEntry {
+  normalized_url: string;
+  source_url: string;
+  final_url: string | null;
+  page_title: string | null;
+  scraped_text: string | null;
+  status: "success" | "failed";
+  error: string | null;
+  fetched_at: number;
+}
+
+export async function getCachedCrawls(
+  normalizedUrls: string[],
+): Promise<Map<string, CrawlCacheEntry>> {
+  const map = new Map<string, CrawlCacheEntry>();
+  if (normalizedUrls.length === 0) return map;
+  const sql = getSql();
+  const rows = (await sql.query(
+    `SELECT * FROM crawl_cache WHERE normalized_url = ANY($1)`,
+    [normalizedUrls],
+  )) as Record<string, unknown>[];
+  for (const row of rows) {
+    map.set(String(row.normalized_url), {
+      normalized_url: String(row.normalized_url),
+      source_url: String(row.source_url ?? ""),
+      final_url: row.final_url == null ? null : String(row.final_url),
+      page_title: row.page_title == null ? null : String(row.page_title),
+      scraped_text: row.scraped_text == null ? null : String(row.scraped_text),
+      status: row.status === "success" ? "success" : "failed",
+      error: row.error == null ? null : String(row.error),
+      fetched_at: toNum(row.fetched_at) ?? 0,
+    });
+  }
+  return map;
+}
+
+export async function upsertCrawlCache(entry: CrawlCacheEntry): Promise<void> {
+  const sql = getSql();
+  await sql.query(
+    `INSERT INTO crawl_cache (
+       normalized_url, source_url, final_url, page_title, scraped_text,
+       status, error, fetched_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (normalized_url) DO UPDATE SET
+       source_url = EXCLUDED.source_url,
+       final_url = EXCLUDED.final_url,
+       page_title = EXCLUDED.page_title,
+       scraped_text = EXCLUDED.scraped_text,
+       status = EXCLUDED.status,
+       error = EXCLUDED.error,
+       fetched_at = EXCLUDED.fetched_at`,
+    [
+      entry.normalized_url,
+      entry.source_url,
+      entry.final_url,
+      entry.page_title,
+      entry.scraped_text,
+      entry.status,
+      entry.error,
+      entry.fetched_at,
+    ],
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
