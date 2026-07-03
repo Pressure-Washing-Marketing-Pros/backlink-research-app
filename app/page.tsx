@@ -418,8 +418,16 @@ export default function Home() {
                   These are the exact queries that will be used for this research run.
                 </p>
               </div>
-              <div className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900">
-                {queryPreview.length} queries
+              <div className="flex items-center gap-2">
+                <div className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900">
+                  {queryPreview.length} queries
+                </div>
+                <a
+                  href="/dashboard"
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  ← Back to Inventory Dashboard
+                </a>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -507,6 +515,12 @@ export default function Home() {
               >
                 Export non-rejected to CSV
               </button>
+              <a
+                href="/dashboard"
+                className="ml-2 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                ← Back to Inventory Dashboard
+              </a>
             </div>
 
             <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
