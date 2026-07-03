@@ -184,10 +184,21 @@ export interface ResearchRun {
 // Writes
 // ---------------------------------------------------------------------------
 
+export interface SkippedDuplicate {
+  domain: string;
+  reason: string;
+}
+
 export async function saveOpportunitiesToDb(
   runResult: RunResult,
   clientName: string,
-): Promise<{ success: boolean; saved_count: number; run_id: string; skipped_duplicates: number }> {
+): Promise<{
+  success: boolean;
+  saved_count: number;
+  run_id: string;
+  skipped_duplicates: number;
+  skipped_domains: SkippedDuplicate[];
+}> {
   const sql = getSql();
   const runId = randomUUID();
   const now = Math.floor(Date.now() / 1000);
@@ -259,6 +270,7 @@ export async function saveOpportunitiesToDb(
 
   let savedCount = 0;
   let skippedDuplicates = 0;
+  const skippedDomains: SkippedDuplicate[] = [];
   for (const opp of runResult.opportunities) {
     if (opp.Decision !== "Approve" && opp.Decision !== "Needs Human Review") continue;
 
@@ -267,29 +279,29 @@ export async function saveOpportunitiesToDb(
     const domainKey = opp.Domain.toLowerCase();
     const exactDuplicate = byNormalizedUrl.get(normalizedUrl);
     const domainDuplicate = byDomain.get(domainKey);
-    // Same URL, or same domain in the same state, is a confident duplicate —
-    // update the existing record instead of inserting a repeat. Same domain
-    // but a different state is uncertain (could be a different franchise/
-    // location), so it's inserted but flagged for human review instead.
-    const confidentDuplicate =
-      exactDuplicate ?? (domainDuplicate && domainDuplicate.state === opp.State ? domainDuplicate : undefined);
-    const uncertainDuplicate =
-      !confidentDuplicate && domainDuplicate && domainDuplicate.state !== opp.State ? domainDuplicate : undefined;
+    // A domain that already exists in inventory is always a duplicate —
+    // regardless of state/location formatting differences between runs —
+    // so it's merged into the existing record instead of ever inserting a
+    // second row for the same domain.
+    const duplicate = exactDuplicate ?? domainDuplicate;
 
-    if (confidentDuplicate) {
+    if (duplicate) {
       // Same domain/URL already in inventory — refresh the existing record
       // instead of inserting a near-duplicate row. Keep whichever resolved
       // location (existing vs. this run's) is more specific.
-      const existingScope = confidentDuplicate.resolved_location_scope || "unclear";
+      const existingScope = duplicate.resolved_location_scope || "unclear";
       const newScope = opp["Resolved Location Scope"];
       const useNewLocation = (SCOPE_SPECIFICITY[newScope] ?? 0) >= (SCOPE_SPECIFICITY[existingScope] ?? 0);
-      const finalCity = useNewLocation ? opp.City : confidentDuplicate.city ?? "";
-      const finalCounty = useNewLocation ? opp.County : confidentDuplicate.county ?? "";
-      const finalLocation = useNewLocation ? opp.Location : confidentDuplicate.location ?? opp.Location;
+      const finalCity = useNewLocation ? opp.City : duplicate.city ?? "";
+      const finalCounty = useNewLocation ? opp.County : duplicate.county ?? "";
+      const finalLocation = useNewLocation ? opp.Location : duplicate.location ?? opp.Location;
       const finalScope = useNewLocation ? newScope : existingScope;
-      const finalConfidence = useNewLocation ? opp["Location Confidence"] : confidentDuplicate.location_confidence ?? opp["Location Confidence"];
-      const finalEvidence = useNewLocation ? opp["Location Evidence"] : confidentDuplicate.location_evidence ?? opp["Location Evidence"];
-      const finalScopes = mergeScopes(confidentDuplicate.source_query_scopes, opp["Source Query Scopes"]);
+      const finalConfidence = useNewLocation ? opp["Location Confidence"] : duplicate.location_confidence ?? opp["Location Confidence"];
+      const finalEvidence = useNewLocation ? opp["Location Evidence"] : duplicate.location_evidence ?? opp["Location Evidence"];
+      const finalScopes = mergeScopes(duplicate.source_query_scopes, opp["Source Query Scopes"]);
+      const reason = exactDuplicate
+        ? "duplicate sponsorship URL already exists in inventory"
+        : "duplicate domain already exists in inventory";
 
       queries.push(
         sql.query(
@@ -314,7 +326,7 @@ export async function saveOpportunitiesToDb(
             opp.Decision,
             opp["Human Review Trigger"],
             opp.Score,
-            `${opp.Notes} Skipped duplicate insert — existing record updated instead.`,
+            `${opp.Notes} Skipped duplicate insert — existing record updated instead (${reason}).`,
             normalizedUrl,
             finalLocation,
             finalCity,
@@ -325,23 +337,20 @@ export async function saveOpportunitiesToDb(
             finalScopes,
             runId,
             now,
-            confidentDuplicate.id,
+            duplicate.id,
           ],
         ),
       );
       skippedDuplicates++;
+      skippedDomains.push({ domain: opp.Domain, reason });
       continue;
     }
 
     const id = randomUUID();
-    const decision = uncertainDuplicate ? "Needs Human Review" : opp.Decision;
-    const humanReviewTrigger = uncertainDuplicate
-      ? `Possible duplicate: domain already exists under a different location (${uncertainDuplicate.state}); ${opp["Human Review Trigger"]}`
-      : opp["Human Review Trigger"];
-    const notes = uncertainDuplicate
-      ? `${opp.Notes} Flagged as possible duplicate — same domain found in a different state.`
-      : opp.Notes;
-    const duplicateOfId = uncertainDuplicate ? uncertainDuplicate.id : null;
+    const decision = opp.Decision;
+    const humanReviewTrigger = opp["Human Review Trigger"];
+    const notes = opp.Notes;
+    const duplicateOfId = null;
     queries.push(
       sql.query(
         `INSERT INTO opportunities (
@@ -445,7 +454,13 @@ export async function saveOpportunitiesToDb(
     throw error;
   }
 
-  return { success: true, saved_count: savedCount, run_id: runId, skipped_duplicates: skippedDuplicates };
+  return {
+    success: true,
+    saved_count: savedCount,
+    run_id: runId,
+    skipped_duplicates: skippedDuplicates,
+    skipped_domains: skippedDomains,
+  };
 }
 
 export async function markOpportunityAsUsed(

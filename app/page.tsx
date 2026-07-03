@@ -70,8 +70,12 @@ export default function Home() {
   const [status, setStatus] = useState<{ ready: boolean; missing: string[]; message: string } | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [savingToInventory, setSavingToInventory] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveOutcome, setSaveOutcome] = useState<{
+    saved_count: number;
+    skipped_duplicates: number;
+    skipped_domains: { domain: string; reason: string }[];
+  } | null>(null);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -204,7 +208,7 @@ export default function Home() {
   async function saveToInventory() {
     if (!result) return;
     setSavingToInventory(true);
-    setSaveSuccess(null);
+    setSaveOutcome(null);
     try {
       // Send the merged opportunities (with any manual Approve/Review/Reject
       // edits applied) — not the raw, unedited run result — so manual
@@ -217,11 +221,20 @@ export default function Home() {
           clientName: result.summary.client,
         }),
       });
-      const data = await parseApiResponse<{ saved_count?: number; error?: string }>(res);
+      const data = await parseApiResponse<{
+        saved_count?: number;
+        skipped_duplicates?: number;
+        skipped_domains?: { domain: string; reason: string }[];
+        error?: string;
+      }>(res);
       if (!res.ok) {
         throw new Error(data.error || "Failed to save opportunities");
       }
-      setSaveSuccess(`Successfully saved ${data.saved_count ?? 0} opportunities to inventory!`);
+      setSaveOutcome({
+        saved_count: data.saved_count ?? 0,
+        skipped_duplicates: data.skipped_duplicates ?? 0,
+        skipped_domains: data.skipped_domains ?? [],
+      });
       setShowSaveDialog(false);
     } catch (err) {
       alert(`Error saving to inventory: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -611,15 +624,6 @@ export default function Home() {
               </table>
             </div>
 
-            {saveSuccess && (
-              <div className="mt-4 rounded-md border border-green-300 bg-green-50 p-4 text-sm text-green-900">
-                <p className="font-medium">✓ {saveSuccess}</p>
-                <p className="mt-1 text-xs text-green-700">
-                 Visit the <a href="/dashboard" className="font-medium hover:underline">inventory dashboard</a> to search and reuse these opportunities.
-                </p>
-              </div>
-            )}
-
             {showSaveDialog && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                 <div className="rounded-lg bg-white shadow-xl max-w-md w-full mx-4">
@@ -651,6 +655,50 @@ export default function Home() {
                       className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {savingToInventory ? "Saving..." : "Save to Inventory"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {saveOutcome && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="rounded-lg bg-white shadow-xl max-w-md w-full mx-4">
+                  <div className="border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-lg font-semibold text-slate-900">
+                      {saveOutcome.skipped_duplicates > 0 ? "Skipped duplicate domains" : "Saved to inventory"}
+                    </h3>
+                  </div>
+                  <div className="px-6 py-4 space-y-3">
+                    <p className="text-sm text-slate-700">
+                      {saveOutcome.saved_count === 0 && saveOutcome.skipped_duplicates > 0
+                        ? "No new opportunities saved. All selected domains already exist in Sponsorship Inventory."
+                        : saveOutcome.skipped_duplicates > 0
+                          ? `Saved ${saveOutcome.saved_count} new opportunit${saveOutcome.saved_count === 1 ? "y" : "ies"}. Skipped ${saveOutcome.skipped_duplicates} duplicate${saveOutcome.skipped_duplicates === 1 ? "" : "s"} because ${saveOutcome.skipped_duplicates === 1 ? "this domain" : "these domains"} already exist${saveOutcome.skipped_duplicates === 1 ? "s" : ""} in Sponsorship Inventory.`
+                          : `Saved ${saveOutcome.saved_count} opportunit${saveOutcome.saved_count === 1 ? "y" : "ies"} to inventory.`}
+                    </p>
+                    {saveOutcome.skipped_domains.length > 0 && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 max-h-48 overflow-y-auto">
+                        <p className="font-medium mb-1">Skipped duplicates:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          {saveOutcome.skipped_domains.map((d, i) => (
+                            <li key={`${d.domain}-${i}`}>
+                              <span className="font-mono">{d.domain}</span> — {d.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500">
+                      Visit the <a href="/dashboard" className="font-medium hover:underline">inventory dashboard</a> to search and reuse these opportunities.
+                    </p>
+                  </div>
+                  <div className="border-t border-slate-200 flex justify-end px-6 py-4">
+                    <button
+                      onClick={() => setSaveOutcome(null)}
+                      className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                    >
+                      Close
                     </button>
                   </div>
                 </div>
