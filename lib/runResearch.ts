@@ -12,6 +12,7 @@ import {
   findEmails,
   parsePaymentType,
 } from "@/lib/crawl";
+import { analyzeWithClaude } from "@/lib/claude-scraper";
 import { createScraper, getConfig } from "@/lib/scrape-strategy";
 import {
   PAGE_PURPOSE_SCORE_CAPS,
@@ -54,6 +55,8 @@ const SERP_CONCURRENCY = 3;
 const AHREFS_CONCURRENCY = 2;
 const SCRAPED_TEXT_PREVIEW_CHARS = 2000;
 const SCRAPE_URL_TIMEOUT_MS = 25000;
+const CLAUDE_ASSIST_TIMEOUT_MS = 12000;
+const DEFAULT_MAX_CLAUDE_ASSISTS_PER_RUN = 3;
 
 function log(message: string): void {
   console.log(`[sponsorship-research] ${message}`);
@@ -133,6 +136,46 @@ interface ScrapeOutcome {
   title: string;
   finalUrl: string;
   error?: string;
+}
+
+interface ClaudeAssistConfig {
+  enabled: boolean;
+  maxPerRun: number;
+}
+
+function getClaudeAssistConfig(): ClaudeAssistConfig {
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
+  const env = process.env.CLAUDE_ASSIST_ANALYSIS?.toLowerCase();
+  const enabledByFlag = env ? env === "1" || env === "true" || env === "yes" : true;
+  const rawMax = Number(process.env.CLAUDE_ASSIST_ANALYSIS_MAX_URLS_PER_RUN);
+  const maxPerRun = Number.isFinite(rawMax) && rawMax > 0
+    ? Math.floor(rawMax)
+    : DEFAULT_MAX_CLAUDE_ASSISTS_PER_RUN;
+  return { enabled: hasKey && enabledByFlag, maxPerRun };
+}
+
+function parseFirstDollarAmount(amount: string | undefined): number | null {
+  if (!amount) return null;
+  const m = amount.match(/\$?\s*([0-9,]+(?:\.\d+)?)/);
+  if (!m) return null;
+  const n = Number(m[1].replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function mapClaudeOpportunityTypeToPagePurpose(
+  value: string | undefined,
+): PagePurpose | null {
+  switch (value) {
+    case "SponsorshipOpportunityPage":
+    case "SponsorPacketOrForm":
+    case "DonationOrPartnerPage":
+    case "VendorOrExhibitorOpportunityPage":
+      return value;
+    case "Unknown":
+      return "Unknown";
+    default:
+      return null;
+  }
 }
 
 const EMPTY_CONTENT: ContentAnalysis = {
@@ -322,6 +365,7 @@ export async function runResearch(
   // Initialize scraper strategy
   const config = getConfig();
   const scraper = await createScraper(config.strategy);
+  const claudeAssist = getClaudeAssistConfig();
   log(`Using scraper: ${scraper.name} (strategy: ${config.strategy})`);
   const SCRAPE_CONCURRENCY = config.concurrency;
 
@@ -488,20 +532,88 @@ export async function runResearch(
 
   // 8. Page-purpose classification + strict analysis → opportunities
   const opportunities: Opportunity[] = [];
+  let claudeAssistUsed = 0;
+  let claudeAssistApplied = 0;
 
   for (const out of outcomes) {
     const metrics = metricsFor(out.candidate);
     const content = analyzeContent(out.text);
+    const enrichedContent: ContentAnalysis = {
+      sponsorshipTerms: [...content.sponsorshipTerms],
+      backlinkTerms: [...content.backlinkTerms],
+      pricingTerms: [...content.pricingTerms],
+      prices: [...content.prices],
+      lowestPrice: content.lowestPrice,
+    };
     const firecrawlStatus = !out.scraped
       ? ("failed" as const)
       : out.fromCache
         ? ("cached" as const)
         : ("success" as const);
-    const pagePurpose = classifyPagePurpose(
+    let pagePurpose = classifyPagePurpose(
       out.finalUrl || out.candidate.serp.url,
       out.title || out.candidate.serp.title,
       out.text,
     );
+    let claudeSupplemental = await (async () => {
+      if (!out.scraped || !claudeAssist.enabled || claudeAssistUsed >= claudeAssist.maxPerRun) {
+        return null;
+      }
+      if (!out.text || out.text.length < 200) return null;
+      claudeAssistUsed++;
+      return withTimeout(
+        analyzeWithClaude(
+          out.finalUrl || out.candidate.serp.url,
+          out.title || out.candidate.serp.title,
+          out.text,
+        ),
+        CLAUDE_ASSIST_TIMEOUT_MS,
+        `Claude assist timeout after ${Math.round(CLAUDE_ASSIST_TIMEOUT_MS / 1000)}s`,
+      ).catch(() => null);
+    })();
+
+    if (claudeSupplemental) {
+      const cPagePurpose = mapClaudeOpportunityTypeToPagePurpose(claudeSupplemental.opportunityType);
+      if (
+        cPagePurpose &&
+        (pagePurpose === "Unknown" ||
+          pagePurpose === "GenericEventPage" ||
+          pagePurpose === "CurrentSponsorsOnlyPage")
+      ) {
+        pagePurpose = cPagePurpose;
+      }
+
+      if (
+        enrichedContent.sponsorshipTerms.length === 0 &&
+        claudeSupplemental.opportunityType &&
+        claudeSupplemental.opportunityType !== "Unknown"
+      ) {
+        enrichedContent.sponsorshipTerms.push("claude-opportunity-signal");
+      }
+
+      if (
+        enrichedContent.backlinkTerms.length === 0 &&
+        (claudeSupplemental.linkOpportunityStatus === "Confirmed" ||
+          claudeSupplemental.linkOpportunityStatus === "Probable" ||
+          !!claudeSupplemental.linkEvidence)
+      ) {
+        enrichedContent.backlinkTerms.push("claude-link-evidence");
+      }
+
+      const claudePrice = parseFirstDollarAmount(claudeSupplemental.paymentAmount);
+      if (claudePrice !== null) {
+        if (!enrichedContent.prices.includes(claudePrice)) {
+          enrichedContent.prices.push(claudePrice);
+          enrichedContent.prices.sort((a, b) => a - b);
+        }
+        if (enrichedContent.lowestPrice === null || claudePrice < enrichedContent.lowestPrice) {
+          enrichedContent.lowestPrice = claudePrice;
+        }
+      }
+
+      claudeAssistApplied++;
+    }
+
     const { rating: localRelevance } = classifyLocalRelevance(out.candidate.serp, inputs);
     const strict = decideStatus({
       dr: metrics.dr,
@@ -510,9 +622,33 @@ export async function runResearch(
       contentLength: out.text.length,
       pagePurpose,
       localRelevance,
-      ...content,
+      ...enrichedContent,
     });
-    const crawl = crawlFromScrape(out, inputs, content);
+    const crawl = crawlFromScrape(out, inputs, enrichedContent);
+    if (claudeSupplemental) {
+      if (claudeSupplemental.opportunityType) {
+        crawl.opportunityType = claudeSupplemental.opportunityType;
+      }
+      if (claudeSupplemental.linkOpportunityStatus) {
+        crawl.linkOpportunityStatus = claudeSupplemental.linkOpportunityStatus;
+      }
+      if (claudeSupplemental.linkEvidence) {
+        crawl.linkEvidence = claudeSupplemental.linkEvidence;
+      }
+      if (claudeSupplemental.paymentAmount) {
+        crawl.paymentAmount = claudeSupplemental.paymentAmount;
+      }
+      if (claudeSupplemental.paymentType) {
+        crawl.paymentType = claudeSupplemental.paymentType;
+      }
+      if (claudeSupplemental.currentSponsorsDisplayedPublicly) {
+        crawl.currentSponsorsDisplayedPublicly = claudeSupplemental.currentSponsorsDisplayedPublicly;
+      }
+      if (claudeSupplemental.currentSponsorsLinked) {
+        crawl.currentSponsorsLinked = claudeSupplemental.currentSponsorsLinked;
+      }
+      crawl.crawlNotes = `${crawl.crawlNotes} Claude assist applied.`.trim();
+    }
     opportunities.push(
       buildRow({
         serp: out.candidate.serp,
@@ -529,16 +665,20 @@ export async function runResearch(
           firecrawlStatus,
           pageTitle: out.title,
           scrapedText: out.text.slice(0, SCRAPED_TEXT_PREVIEW_CHARS),
-          matchedSponsorshipTerms: content.sponsorshipTerms,
-          matchedBacklinkTerms: content.backlinkTerms,
-          matchedPricingTerms: content.pricingTerms,
-          detectedPrices: content.prices,
-          lowestDetectedPrice: content.lowestPrice,
+          matchedSponsorshipTerms: enrichedContent.sponsorshipTerms,
+          matchedBacklinkTerms: enrichedContent.backlinkTerms,
+          matchedPricingTerms: enrichedContent.pricingTerms,
+          detectedPrices: enrichedContent.prices,
+          lowestDetectedPrice: enrichedContent.lowestPrice,
           pagePurpose,
           crawlCached: out.fromCache,
         },
       }),
     );
+  }
+
+  if (claudeAssist.enabled) {
+    log(`Claude assist: ${claudeAssistApplied}/${claudeAssistUsed} analyzed pages applied (max ${claudeAssist.maxPerRun})`);
   }
 
   // 9. Non-scraped groups still get rows so nothing silently disappears
