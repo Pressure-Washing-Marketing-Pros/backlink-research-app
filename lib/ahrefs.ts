@@ -30,7 +30,13 @@ async function ahrefsGet(pathAndQuery: string, attempt = 0): Promise<unknown> {
   if (!res.ok) {
     throw new Error(`Ahrefs HTTP ${res.status}: ${await res.text().catch(() => "")}`);
   }
-  return res.json();
+
+  try {
+    return await res.json();
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    throw new Error(`Ahrefs JSON parse error: ${err.slice(0, 300)}`);
+  }
 }
 
 function pickNumber(obj: unknown, keys: string[]): number | null {

@@ -12,7 +12,7 @@ import {
   findEmails,
   parsePaymentType,
 } from "@/lib/crawl";
-import { scrapeUrl } from "@/lib/firecrawl";
+import { createScraper, getConfig } from "@/lib/scrape-strategy";
 import {
   PAGE_PURPOSE_SCORE_CAPS,
   analyzeContent,
@@ -31,7 +31,6 @@ import {
 import {
   DEFAULT_CLIENT_BUDGET,
   DR_MINIMUM,
-  FIRECRAWL_CONCURRENCY,
   isCrawlCacheFresh,
   maxFirecrawlUrlsPerRun,
 } from "@/lib/sponsorshipConfig";
@@ -218,8 +217,8 @@ function crawlFromScrape(
     submissionUrl: emails.length > 0 ? `mailto:${emails[0]}` : "",
     contactEmail: emails[0] ?? "",
     contactPerson: "",
-    freshnessSiteQualityNotes: `Scraped via Firecrawl: ${text.length} chars of visible content${out.fromCache ? " (from cache)" : ""}.`,
-    crawlNotes: `Firecrawl content analyzed for ${url}.`,
+    freshnessSiteQualityNotes: `Scraped content: ${text.length} chars of visible content${out.fromCache ? " (from cache)" : ""}.`,
+    crawlNotes: `Page content analyzed for ${url}.`,
   };
 }
 
@@ -301,6 +300,12 @@ export async function runResearch(
     inputs.maximum_approved_budget > 0
       ? inputs.maximum_approved_budget
       : DEFAULT_CLIENT_BUDGET;
+
+  // Initialize scraper strategy
+  const config = getConfig();
+  const scraper = await createScraper(config.strategy);
+  log(`Using scraper: ${scraper.name} (strategy: ${config.strategy})`);
+  const SCRAPE_CONCURRENCY = config.concurrency;
 
   const queries = renderQueries(inputs);
 
@@ -401,7 +406,7 @@ export async function runResearch(
   let scrapeFail = 0;
   const outcomes = await runWithConcurrency(
     toScrape,
-    FIRECRAWL_CONCURRENCY,
+    SCRAPE_CONCURRENCY,
     async (c): Promise<ScrapeOutcome> => {
       const cached = cacheMap.get(c.key);
       if (cached && isCrawlCacheFresh(cached, nowSec)) {
@@ -417,7 +422,7 @@ export async function runResearch(
         };
       }
 
-      const res = await scrapeUrl(c.fetchUrl);
+      const res = await scraper.scrapeUrl(c.fetchUrl);
       if (res.ok) scrapeOk++;
       else scrapeFail++;
 
@@ -449,7 +454,7 @@ export async function runResearch(
       };
     },
   );
-  log(`Firecrawl: ${scrapeOk} scraped, ${scrapeFail} failed, ${cacheHits} served from cache`);
+  log(`${scraper.name}: ${scrapeOk} scraped, ${scrapeFail} failed, ${cacheHits} served from cache`);
 
   // 8. Page-purpose classification + strict analysis → opportunities
   const opportunities: Opportunity[] = [];

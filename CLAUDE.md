@@ -32,11 +32,16 @@ Put these in `.env.local` (gitignored) for local dev, and mirror them in Vercel 
 - `DATAFORSEO_LOGIN` — DataForSEO account login (used in Basic auth)
 - `DATAFORSEO_PASSWORD` — DataForSEO account password (used in Basic auth)
 - `AHREFS_API_TOKEN` — Ahrefs API bearer token
-- `FIRECRAWL_API_KEY` — Firecrawl API key (strict page-scraping layer; free plan: 1,000 pages/mo, 2 concurrent requests)
 - `DATABASE_URL` — Neon Postgres (inventory + crawl cache)
+- `ANTHROPIC_API_KEY` — Anthropic Claude API key (required for Claude scraping strategy)
 
-Optional tuning (defaults live in `lib/sponsorshipConfig.ts`):
+Optional scraping & tuning (defaults live in `lib/sponsorshipConfig.ts` and `lib/scrape-strategy.ts`):
 
+- `SCRAPE_STRATEGY` — page scraping backend (default: `claude-fallback`)
+  - `firecrawl` — Firecrawl only (1,000 pages/mo free, 2 concurrent)
+  - `claude` — Claude only (no monthly limit, higher concurrency)
+  - `claude-fallback` — Try Firecrawl first, fall back to Claude on failure
+- `FIRECRAWL_API_KEY` — Firecrawl API key (only needed if using Firecrawl strategy)
 - `FIRECRAWL_MAX_URLS_PER_RUN` — per-run scrape cap (default 50)
 - `CRAWL_CACHE_TTL_DAYS` — successful-crawl reuse window in days (default 60)
 
@@ -44,11 +49,16 @@ Optional tuning (defaults live in `lib/sponsorshipConfig.ts`):
 
 `lib/runResearch.ts` orders stages so paid APIs are spent last:
 DataForSEO SERP → URL normalize + dedup (`lib/urlNormalize.ts`) → spam-domain
-reject → Ahrefs DR gate (DR ≥ 25, `lib/sponsorshipConfig.ts`) → Firecrawl
-scrape with 60-day cache (`lib/firecrawl.ts`, `crawl_cache` table) → strict
-keyword/price matching on scraped content (`lib/pageAnalysis.ts`). Approval is
-never based on SERP titles/snippets or URL text — only scraped page content +
-DR. Missing core data always routes to review, never to approve.
+reject → Ahrefs DR gate (DR ≥ 25, `lib/sponsorshipConfig.ts`) → page scraping
+(`lib/firecrawl.ts` or `lib/claude-scraper.ts`, with 60-day cache) → strict
+keyword/price matching on scraped content (`lib/pageAnalysis.ts`). 
+
+**Scraping strategies** (`lib/scrape-strategy.ts`):
+- **Firecrawl** (default legacy): Static HTML extraction, 1,000 pages/mo free, 2 concurrent
+- **Claude** (new): HTML → semantic analysis + decision logic in one call, higher concurrency, token-based pricing
+- **Claude-fallback** (recommended): Try Firecrawl first, fall back to Claude on failure
+
+Approval is never based on SERP titles/snippets or URL text — only scraped page content + DR. Missing core data always routes to review, never to approve.
 
 ## External inputs (provided, not yet wired up)
 

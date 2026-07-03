@@ -60,7 +60,7 @@ async function attemptScrape(url: string, key: string): Promise<FirecrawlResult>
     );
   }
 
-  const json = (await res.json()) as {
+  let json: {
     success?: boolean;
     error?: string;
     data?: {
@@ -68,6 +68,20 @@ async function attemptScrape(url: string, key: string): Promise<FirecrawlResult>
       metadata?: { title?: string; sourceURL?: string; url?: string };
     };
   };
+
+  try {
+    json = (await res.json()) as {
+      success?: boolean;
+      error?: string;
+      data?: {
+        markdown?: string;
+        metadata?: { title?: string; sourceURL?: string; url?: string };
+      };
+    };
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    return fail(res.status, `Firecrawl JSON parse error: ${err.slice(0, 300)}`, url, false);
+  }
 
   if (!json.success || !json.data) {
     return fail(res.status, `Firecrawl error: ${json.error ?? "no data returned"}`, url);

@@ -89,7 +89,14 @@ export async function serpQuery(opts: SerpQueryOptions): Promise<SerpResult[]> {
     );
   }
 
-  const json = (await res.json()) as DataForSeoResponse;
+  let json: DataForSeoResponse;
+  try {
+    json = (await res.json()) as DataForSeoResponse;
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    throw new Error(`DataForSEO JSON parse error: ${err.slice(0, 300)}`);
+  }
+
   const task = json.tasks?.[0];
   if (!task || (task.status_code && task.status_code >= 40000)) {
     throw new Error(
