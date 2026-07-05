@@ -403,6 +403,10 @@ export interface StrictDecisionInput {
   lowestPrice: number | null;
   pagePurpose: PagePurpose;
   localRelevance: LocalRelevanceRating;
+  /** Specific reason DR/traffic came back null (API key missing, rate
+   *  limited, invalid domain, etc.) — shown instead of a generic message
+   *  when available. */
+  ahrefsErrorReason?: string;
 }
 
 export interface StrictDecision {
@@ -431,16 +435,19 @@ export function decideStatus(input: StrictDecisionInput): StrictDecision {
   ): StrictDecision => ({ approvalStatus, approvalReason, withinBudget, rejectionCategory });
 
   if (input.dr === null) {
+    const reason = input.ahrefsErrorReason
+      ? `Review: Ahrefs DR/traffic unavailable — ${input.ahrefsErrorReason}.`
+      : "Review: Ahrefs DR is unavailable for an unknown reason.";
     if (input.firecrawlStatus === "success" || input.firecrawlStatus === "cached") {
       return verdict(
         "review",
-        "Review: Ahrefs DR is unavailable. The page was scraped and analyzed, but authority could not be verified.",
+        `${reason} The page was scraped and analyzed, but authority could not be verified.`,
         "Unknown",
       );
     }
     return verdict(
       "review",
-      "Review: Ahrefs DR is unavailable, so domain authority could not be verified. Not scraped, to save Firecrawl credits.",
+      `${reason} Not scraped, to save Firecrawl credits.`,
       "Unknown",
     );
   }

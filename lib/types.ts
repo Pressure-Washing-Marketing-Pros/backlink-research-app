@@ -61,11 +61,29 @@ export interface SerpResult {
   query_scope?: QueryScope;
 }
 
+export type AhrefsErrorCategory =
+  | "api_key_missing"
+  | "rate_limited"
+  | "invalid_domain"
+  | "request_failed"
+  | "response_mapping_failed"
+  | "no_data_returned";
+
 export interface AhrefsMetrics {
   dr: number | null;
   organic_traffic: number | null;
   referring_domains: number | null;
   error?: string;
+  /** Machine-readable reason when dr/organic_traffic are null — lets the UI
+   *  show a specific cause instead of a single generic "DR unavailable". */
+  errorCategory?: AhrefsErrorCategory;
+  status: "success" | "failed";
+  checkedAt: string;
+  /** The exact domain string sent to the Ahrefs API — helps catch cases
+   *  where a full URL or malformed value was sent instead of a root domain. */
+  targetUsed: string;
+  /** Truncated raw response body, only populated on failure, for debugging. */
+  rawResponsePreview?: string;
 }
 
 export interface SponsorshipCrawlResult {

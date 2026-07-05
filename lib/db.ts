@@ -233,7 +233,8 @@ export async function saveOpportunitiesToDb(
   // clutter the inventory with repeats.
   const existingRows = (await sql.query(
     `SELECT id, domain, sponsorship_url, normalized_url, state, city, county, location,
-            resolved_location_scope, location_confidence, location_evidence, source_query_scopes
+            resolved_location_scope, location_confidence, location_evidence, source_query_scopes,
+            dr, organic_traffic
      FROM opportunities`,
   )) as {
     id: string;
@@ -248,6 +249,8 @@ export async function saveOpportunitiesToDb(
     location_confidence: string | null;
     location_evidence: string | null;
     source_query_scopes: string | null;
+    dr: number | string | null;
+    organic_traffic: number | string | null;
   }[];
   // City is the most specific resolvable scope, then county, then statewide;
   // "unclear" is the least specific. When a duplicate is merged, the more
@@ -303,6 +306,14 @@ export async function saveOpportunitiesToDb(
         ? "duplicate sponsorship URL already exists in inventory"
         : "duplicate domain already exists in inventory";
 
+      // Never let a null/failed Ahrefs lookup on this save overwrite a
+      // previously-good DR/traffic value already stored on the record.
+      const newDr = opp.DR === "Unknown" ? null : opp.DR;
+      const newTraffic = opp.Traffic === "Unknown" ? null : opp.Traffic;
+      const finalDr = newDr !== null ? newDr : duplicate.dr !== null ? Number(duplicate.dr) : null;
+      const finalTraffic =
+        newTraffic !== null ? newTraffic : duplicate.organic_traffic !== null ? Number(duplicate.organic_traffic) : null;
+
       queries.push(
         sql.query(
           `UPDATE opportunities SET
@@ -315,8 +326,8 @@ export async function saveOpportunitiesToDb(
              run_id = $21, updated_at = $22, last_checked_at = $22
            WHERE id = $23`,
           [
-            opp.DR === "Unknown" ? null : opp.DR,
-            opp.Traffic === "Unknown" ? null : opp.Traffic,
+            finalDr,
+            finalTraffic,
             opp["Payment Amount"],
             opp["Payment Type"],
             opp["Submission Method"],
@@ -441,6 +452,8 @@ export async function saveOpportunitiesToDb(
       location_confidence: opp["Location Confidence"],
       location_evidence: opp["Location Evidence"],
       source_query_scopes: opp["Source Query Scopes"],
+      dr: opp.DR === "Unknown" ? null : opp.DR,
+      organic_traffic: opp.Traffic === "Unknown" ? null : opp.Traffic,
     };
     byDomain.set(domainKey, trackedRow);
     byNormalizedUrl.set(normalizedUrl, trackedRow);

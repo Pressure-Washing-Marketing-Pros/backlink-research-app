@@ -246,11 +246,39 @@ const EMPTY_CONTENT: ContentAnalysis = {
   lowestPrice: null,
 };
 
-const NULL_METRICS: AhrefsMetrics = {
-  dr: null,
-  organic_traffic: null,
-  referring_domains: null,
+// A fresh object per call (not a shared constant) so `checkedAt` reflects
+// when each never-looked-up candidate was actually skipped.
+function nullMetrics(): AhrefsMetrics {
+  return {
+    dr: null,
+    organic_traffic: null,
+    referring_domains: null,
+    status: "failed",
+    errorCategory: undefined,
+    checkedAt: new Date().toISOString(),
+    targetUsed: "",
+    error: "Ahrefs was never called for this candidate (filtered out before the DR lookup step)",
+  };
+}
+
+const AHREFS_ERROR_CATEGORY_LABEL: Record<string, string> = {
+  api_key_missing: "the Ahrefs API key is missing or empty in this environment",
+  rate_limited: "Ahrefs rate-limited the request",
+  invalid_domain: "an invalid domain was sent to Ahrefs",
+  request_failed: "the Ahrefs request failed",
+  response_mapping_failed: "the Ahrefs response could not be parsed",
+  no_data_returned: "Ahrefs returned no data for this domain",
 };
+
+// Turns AhrefsMetrics.error/errorCategory into a short human-readable
+// fragment for the review trigger — so "DR unavailable" always says why.
+function ahrefsErrorReason(metrics: AhrefsMetrics): string | undefined {
+  if (metrics.dr !== null) return undefined;
+  if (metrics.errorCategory && AHREFS_ERROR_CATEGORY_LABEL[metrics.errorCategory]) {
+    return AHREFS_ERROR_CATEGORY_LABEL[metrics.errorCategory];
+  }
+  return metrics.error;
+}
 
 const DECISION_BY_STATUS: Record<ApprovalStatus, Decision> = {
   approved: "Approve",
@@ -552,7 +580,7 @@ export async function runResearch(
   const uniqueDomains = Array.from(new Set(clean.map((c) => c.serp.root_domain)));
   const metricsMap = await domainMetricsBatch(uniqueDomains, ahrefsConc);
   const metricsFor = (c: Candidate): AhrefsMetrics =>
-    metricsMap.get(c.serp.root_domain) ?? NULL_METRICS;
+    metricsMap.get(c.serp.root_domain) ?? nullMetrics();
 
   const passedDr: Candidate[] = [];
   const belowDr: Candidate[] = [];
@@ -747,6 +775,7 @@ export async function runResearch(
       contentLength: out.text.length,
       pagePurpose,
       localRelevance,
+      ahrefsErrorReason: ahrefsErrorReason(metrics),
       ...enrichedContent,
     });
     const crawl = crawlFromScrape(out, inputs, enrichedContent);
@@ -861,7 +890,7 @@ export async function runResearch(
   for (const { candidate: c, reason, category } of prefiltered) {
     pushUnscraped(
       c,
-      NULL_METRICS,
+      nullMetrics(),
       {
         approvalStatus: "rejected",
         approvalReason: `Rejected: ${reason}.`,
@@ -880,18 +909,31 @@ export async function runResearch(
     pushUnscraped(
       c,
       metrics,
-      decideStatus({ ...baseStrictInput, dr: metrics.dr, pagePurpose: purposeOf(c), localRelevance: rating }),
+      decideStatus({
+        ...baseStrictInput,
+        dr: metrics.dr,
+        pagePurpose: purposeOf(c),
+        localRelevance: rating,
+        ahrefsErrorReason: ahrefsErrorReason(metrics),
+      }),
       unscrapedCrawl(c.serp, "Not scraped this run: per-run Firecrawl cap reached."),
       purposeOf(c),
     );
   }
   for (const c of drUnknown) {
     if (scrapedOrCappedKeys.has(c.key)) continue;
+    const metrics = metricsFor(c);
     const { rating } = classifyLocalRelevance(c.serp, inputs);
     pushUnscraped(
       c,
-      metricsFor(c),
-      decideStatus({ ...baseStrictInput, dr: null, pagePurpose: purposeOf(c), localRelevance: rating }),
+      metrics,
+      decideStatus({
+        ...baseStrictInput,
+        dr: null,
+        pagePurpose: purposeOf(c),
+        localRelevance: rating,
+        ahrefsErrorReason: ahrefsErrorReason(metrics),
+      }),
       unscrapedCrawl(
         c.serp,
         allowDrUnknownScrape
@@ -907,7 +949,13 @@ export async function runResearch(
     pushUnscraped(
       c,
       metrics,
-      decideStatus({ ...baseStrictInput, dr: metrics.dr, pagePurpose: purposeOf(c), localRelevance: rating }),
+      decideStatus({
+        ...baseStrictInput,
+        dr: metrics.dr,
+        pagePurpose: purposeOf(c),
+        localRelevance: rating,
+        ahrefsErrorReason: ahrefsErrorReason(metrics),
+      }),
       unscrapedCrawl(c.serp, "Not scraped: domain is below the DR threshold."),
       purposeOf(c),
     );
@@ -915,7 +963,7 @@ export async function runResearch(
   for (const c of nonHttps) {
     pushUnscraped(
       c,
-      NULL_METRICS,
+      nullMetrics(),
       {
         approvalStatus: "rejected",
         approvalReason: "Rejected: site is not HTTPS.",

@@ -268,7 +268,9 @@ export function buildOpportunity(ctx: DecisionContext): Opportunity {
   const trafficVal = metrics.organic_traffic ?? "Unknown";
 
   if (metrics.error) {
-    notes.push(`Ahrefs: ${metrics.error}`);
+    notes.push(
+      `Ahrefs [${metrics.errorCategory ?? "unknown"}] target="${metrics.targetUsed}" checkedAt=${metrics.checkedAt}: ${metrics.error}`,
+    );
   }
 
   const nowIso = new Date().toISOString();

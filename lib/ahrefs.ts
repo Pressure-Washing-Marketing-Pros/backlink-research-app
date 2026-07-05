@@ -1,11 +1,26 @@
 import "server-only";
-import type { AhrefsMetrics } from "@/lib/types";
+import type { AhrefsErrorCategory, AhrefsMetrics } from "@/lib/types";
 
 const BASE = "https://api.ahrefs.com/v3";
 
+class AhrefsApiError extends Error {
+  category: AhrefsErrorCategory;
+  rawResponsePreview?: string;
+  constructor(message: string, category: AhrefsErrorCategory, rawResponsePreview?: string) {
+    super(message);
+    this.category = category;
+    this.rawResponsePreview = rawResponsePreview;
+  }
+}
+
 function authHeader(): string {
   const token = process.env.AHREFS_API_TOKEN;
-  if (!token) throw new Error("Missing AHREFS_API_TOKEN in environment");
+  if (!token) {
+    throw new AhrefsApiError(
+      "AHREFS_API_TOKEN is missing or empty in this environment",
+      "api_key_missing",
+    );
+  }
   return `Bearer ${token}`;
 }
 
@@ -27,15 +42,32 @@ async function ahrefsGet(pathAndQuery: string, attempt = 0): Promise<unknown> {
     await new Promise((r) => setTimeout(r, 2500 * (attempt + 1)));
     return ahrefsGet(pathAndQuery, attempt + 1);
   }
+  if (res.status === 429) {
+    throw new AhrefsApiError(
+      `Ahrefs rate limit exceeded (HTTP 429) after retries`,
+      "rate_limited",
+      (await res.text().catch(() => "")).slice(0, 300),
+    );
+  }
   if (!res.ok) {
-    throw new Error(`Ahrefs HTTP ${res.status}: ${await res.text().catch(() => "")}`);
+    const body = await res.text().catch(() => "");
+    throw new AhrefsApiError(
+      `Ahrefs request failed: HTTP ${res.status}`,
+      "request_failed",
+      body.slice(0, 300),
+    );
   }
 
+  const text = await res.text();
   try {
-    return await res.json();
+    return JSON.parse(text);
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
-    throw new Error(`Ahrefs JSON parse error: ${err.slice(0, 300)}`);
+    throw new AhrefsApiError(
+      `Ahrefs response could not be parsed as JSON: ${err.slice(0, 200)}`,
+      "response_mapping_failed",
+      text.slice(0, 300),
+    );
   }
 }
 
@@ -83,9 +115,55 @@ function pickNumber(obj: unknown, keys: string[]): number | null {
   return null;
 }
 
+interface TaggedFailure {
+  __error: string;
+  __category: AhrefsErrorCategory;
+  __raw?: string;
+}
+
+function toTaggedFailure(e: unknown): TaggedFailure {
+  if (e instanceof AhrefsApiError) {
+    return { __error: e.message, __category: e.category, __raw: e.rawResponsePreview };
+  }
+  return {
+    __error: e instanceof Error ? e.message : String(e),
+    __category: "request_failed",
+  };
+}
+
+function isTaggedFailure(v: unknown): v is TaggedFailure {
+  return !!v && typeof v === "object" && "__error" in v;
+}
+
 export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
-  if (!domain) {
-    return { dr: null, organic_traffic: null, referring_domains: null, error: "empty domain" };
+  const checkedAt = new Date().toISOString();
+  const targetUsed = domain;
+
+  if (!domain || !domain.trim()) {
+    return {
+      dr: null,
+      organic_traffic: null,
+      referring_domains: null,
+      error: "No domain was provided to Ahrefs (empty root domain)",
+      errorCategory: "invalid_domain",
+      status: "failed",
+      checkedAt,
+      targetUsed,
+    };
+  }
+  // A full URL (with scheme/path) sent as "domain" is a caller bug — Ahrefs
+  // expects a bare root domain (e.g. "example.com"), not "https://example.com/page".
+  if (/^https?:\/\//i.test(domain) || domain.includes("/")) {
+    return {
+      dr: null,
+      organic_traffic: null,
+      referring_domains: null,
+      error: `Expected a root domain but received "${domain}" — looks like a full URL or path was passed instead`,
+      errorCategory: "invalid_domain",
+      status: "failed",
+      checkedAt,
+      targetUsed,
+    };
   }
 
   const date = today();
@@ -97,60 +175,97 @@ export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
 
   try {
     let [drJson, metricsJson] = await Promise.all([
-      ahrefsGet(drPathWithDate).catch((e: Error) => ({ __error: e.message })),
-      ahrefsGet(metricsPathWithDate).catch((e: Error) => ({ __error: e.message })),
+      ahrefsGet(drPathWithDate).catch(toTaggedFailure),
+      ahrefsGet(metricsPathWithDate).catch(toTaggedFailure),
     ]);
+
+    // Once the API key itself is the problem, retrying without a date won't
+    // help — every subsequent call would fail identically, so bail out early
+    // instead of doubling the (already-failing) request count.
+    const drFailedInitial = isTaggedFailure(drJson);
+    const metricsFailedInitial = isTaggedFailure(metricsJson);
+    const authFailure =
+      (isTaggedFailure(drJson) && drJson.__category === "api_key_missing") ||
+      (isTaggedFailure(metricsJson) && metricsJson.__category === "api_key_missing");
 
     // Some domains/date snapshots fail for "today" even though Ahrefs has
     // data. Retry once without date to fetch the latest available snapshot.
-    const drFailed = drJson && typeof drJson === "object" && "__error" in drJson;
-    const metricsFailed = metricsJson && typeof metricsJson === "object" && "__error" in metricsJson;
-    if (drFailed || metricsFailed) {
+    if (!authFailure && (drFailedInitial || metricsFailedInitial)) {
       const [drNoDate, metricsNoDate] = await Promise.all([
-        drFailed
-          ? ahrefsGet(drPathNoDate).catch((e: Error) => ({ __error: e.message }))
-          : Promise.resolve(drJson),
-        metricsFailed
-          ? ahrefsGet(metricsPathNoDate).catch((e: Error) => ({ __error: e.message }))
-          : Promise.resolve(metricsJson),
+        drFailedInitial ? ahrefsGet(drPathNoDate).catch(toTaggedFailure) : Promise.resolve(drJson),
+        metricsFailedInitial ? ahrefsGet(metricsPathNoDate).catch(toTaggedFailure) : Promise.resolve(metricsJson),
       ]);
       drJson = drNoDate;
       metricsJson = metricsNoDate;
     }
 
-    const dr = pickNumber(drJson, ["domain_rating"]);
-    const organic_traffic = pickNumber(metricsJson, [
-      "org_traffic",
-      "organic_traffic",
-      "organic_search_traffic",
-      "traffic",
-    ]);
-    const referring_domains = pickNumber(metricsJson, [
-      "refdomains",
-      "referring_domains",
-      "ref_domains",
-    ]);
+    const dr = isTaggedFailure(drJson) ? null : pickNumber(drJson, ["domain_rating"]);
+    const organic_traffic = isTaggedFailure(metricsJson)
+      ? null
+      : pickNumber(metricsJson, ["org_traffic", "organic_traffic", "organic_search_traffic", "traffic"]);
+    const referring_domains = isTaggedFailure(metricsJson)
+      ? null
+      : pickNumber(metricsJson, ["refdomains", "referring_domains", "ref_domains"]);
 
-    const errs: string[] = [];
-    if (drJson && typeof drJson === "object" && "__error" in drJson) {
-      errs.push(`dr: ${(drJson as { __error: string }).__error}`);
+    const drFailure = isTaggedFailure(drJson) ? drJson : null;
+    const metricsFailure = isTaggedFailure(metricsJson) ? metricsJson : null;
+
+    if (drFailure || metricsFailure) {
+      const errs = [
+        drFailure && `dr: ${drFailure.__error}`,
+        metricsFailure && `metrics: ${metricsFailure.__error}`,
+      ].filter(Boolean);
+      const category = drFailure?.__category ?? metricsFailure?.__category ?? "request_failed";
+      const rawPreview = drFailure?.__raw ?? metricsFailure?.__raw;
+      return {
+        dr,
+        organic_traffic,
+        referring_domains,
+        error: errs.join("; "),
+        errorCategory: category,
+        status: "failed",
+        checkedAt,
+        targetUsed,
+        rawResponsePreview: rawPreview,
+      };
     }
-    if (metricsJson && typeof metricsJson === "object" && "__error" in metricsJson) {
-      errs.push(`metrics: ${(metricsJson as { __error: string }).__error}`);
+
+    // Both requests succeeded, but neither response contained a recognizable
+    // numeric field — Ahrefs returned data, just not what we expected to find.
+    if (dr === null && organic_traffic === null) {
+      return {
+        dr: null,
+        organic_traffic: null,
+        referring_domains,
+        error: "Ahrefs returned a successful response with no domain_rating/traffic fields for this domain",
+        errorCategory: "no_data_returned",
+        status: "failed",
+        checkedAt,
+        targetUsed,
+        rawResponsePreview: JSON.stringify({ drJson, metricsJson }).slice(0, 500),
+      };
     }
 
     return {
       dr,
       organic_traffic,
       referring_domains,
-      error: errs.length > 0 ? errs.join("; ") : undefined,
+      status: "success",
+      checkedAt,
+      targetUsed,
     };
   } catch (e) {
+    const failure = toTaggedFailure(e);
     return {
       dr: null,
       organic_traffic: null,
       referring_domains: null,
-      error: e instanceof Error ? e.message : String(e),
+      error: failure.__error,
+      errorCategory: failure.__category,
+      status: "failed",
+      checkedAt,
+      targetUsed,
+      rawResponsePreview: failure.__raw,
     };
   }
 }
