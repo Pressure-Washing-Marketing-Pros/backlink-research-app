@@ -536,6 +536,9 @@ export default function Home() {
                       "Relevance",
                       "Pricing",
                       "Payment Type",
+                      "Sponsorship Tiers",
+                      "Cheapest Tier With Link",
+                      "Tier Name",
                       "Current Sponsors Linked",
                       "Contact Page URL",
                       "Contact Fallback",
@@ -643,6 +646,42 @@ export default function Home() {
                               <option value="Other">Other</option>
                             </select>
                           </td>
+                          <td className="px-3 py-2 min-w-[14rem]">
+                            <input
+                              value={o["Sponsorship Tiers"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Sponsorship Tiers": e.target.value,
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="e.g., Bronze $500, Silver $1000 (includes link)"
+                            />
+                          </td>
+                          <td className="px-3 py-2 min-w-[14rem]">
+                            <input
+                              value={o["Cheapest Tier With Link"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Cheapest Tier With Link": e.target.value,
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="e.g., Silver ($1000)"
+                            />
+                          </td>
+                          <td className="px-3 py-2 min-w-[10rem]">
+                            <input
+                              value={o["Tier Name"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Tier Name": e.target.value,
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              placeholder="e.g., Silver"
+                            />
+                          </td>
                           <td className="px-3 py-2 min-w-[10rem]">
                             <select
                               value={o["Current Sponsors Linked"] || "Unknown"}
@@ -699,7 +738,7 @@ export default function Home() {
                   })}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={16} className="px-3 py-8 text-center text-zinc-500">
+                      <td colSpan={19} className="px-3 py-8 text-center text-zinc-500">
                         No rows match the current filter.
                       </td>
                     </tr>
