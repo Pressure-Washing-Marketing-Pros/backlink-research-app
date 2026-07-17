@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { OPPORTUNITY_COLUMNS } from "@/lib/decision";
 import { toCsv } from "@/lib/csv";
@@ -22,8 +23,6 @@ type FormState = {
   state_abbrev: string;
   county: string;
   metro: string;
-  maximum_approved_budget: string;
-  budget_exceptions_allowed: "Yes" | "No";
 };
 
 const INITIAL: FormState = {
@@ -32,8 +31,6 @@ const INITIAL: FormState = {
   state_abbrev: "",
   county: "",
   metro: "",
-  maximum_approved_budget: "",
-  budget_exceptions_allowed: "No",
 };
 
 const DECISION_FILTERS: ("All" | Decision)[] = [
@@ -47,8 +44,6 @@ function toClientInputs(form: FormState): Partial<ClientInputs> {
   return {
     client_primary_city: form.client_primary_city,
     client_state: form.client_state,
-    maximum_approved_budget: Number(form.maximum_approved_budget) || 0,
-    budget_exceptions_allowed: form.budget_exceptions_allowed,
     state_abbrev: form.state_abbrev || undefined,
     county: form.county || undefined,
     metro: form.metro || undefined,
@@ -123,7 +118,7 @@ export default function Home() {
   }
 
   function getOpportunityKey(o: Opportunity): string {
-    return `${o.Domain}::${o["Sponsorship URL"] || o["Opportunity Name"]}`;
+    return `${o.Domain}::${o["Opportunity Name"] || "unknown"}::${o["Search Query Used"] || "unknown"}`;
   }
 
   const mergeOpportunity = useCallback(
@@ -265,17 +260,20 @@ export default function Home() {
         <header className="mb-10 border-b border-slate-200 pb-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <img
+              <Image
                 src="/pwmarketing-logo.png"
                 alt="PW Marketing Pros"
+                width={320}
+                height={96}
                 className="h-16 w-auto"
+                priority
               />
               <div>
                 <h1 className="text-3xl font-bold text-slate-900">
                   Sponsorship Researcher
                 </h1>
                 <p className="mt-1 text-sm text-slate-600">
-                  Find and qualify local sponsorship opportunities by location — SERP discovery + DR lookup + sponsorship-page review.
+                  Discover local sponsorship opportunities by location using DataForSEO SERP, crawl, and content analysis.
                 </p>
               </div>
             </div>
@@ -322,6 +320,12 @@ export default function Home() {
           )}
         </section>
 
+        <section className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5 shadow-sm">
+          <p className="text-sm text-blue-900">
+            <strong>Research only.</strong> This system discovers and extracts sponsorship opportunity information for human review. It does not send emails, submit forms, make purchases, or contact organizations. All collected contact information is for manual outreach by authorized team members only.
+          </p>
+        </section>
+
         <form
           onSubmit={onSubmit}
           className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2"
@@ -342,8 +346,9 @@ export default function Home() {
               className={inputClass}
             />
           </Field>
-          <Field label="State abbreviation (e.g. NC)">
+          <Field label="State abbreviation * (e.g. NC)">
             <input
+              required
               value={form.state_abbrev}
               onChange={(e) => update("state_abbrev", e.target.value)}
               className={inputClass}
@@ -354,6 +359,7 @@ export default function Home() {
               value={form.county}
               onChange={(e) => update("county", e.target.value)}
               className={inputClass}
+              placeholder="Optional. Use when researching county-wide sponsorship opportunities."
             />
           </Field>
           <Field label="Metro">
@@ -361,29 +367,8 @@ export default function Home() {
               value={form.metro}
               onChange={(e) => update("metro", e.target.value)}
               className={inputClass}
+              placeholder="Optional. Use when researching opportunities across a larger metro market."
             />
-          </Field>
-          <Field label="Likely budget ceiling ($) *">
-            <input
-              required
-              type="number"
-              min="0"
-              value={form.maximum_approved_budget}
-              onChange={(e) => update("maximum_approved_budget", e.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Budget exceptions allowed *">
-            <select
-              value={form.budget_exceptions_allowed}
-              onChange={(e) =>
-                update("budget_exceptions_allowed", e.target.value as "Yes" | "No")
-              }
-              className={inputClass}
-            >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
           </Field>
 
           <div className="md:col-span-2 grid gap-3 lg:grid-cols-[auto_1fr] lg:items-center">
@@ -406,7 +391,7 @@ export default function Home() {
             </div>
             {loading && (
               <span className="text-sm text-slate-600">
-                This can take a few minutes — running 33 queries × ~30 results, then Ahrefs lookups.
+                This can take a few minutes while DataForSEO fetches and analyzes opportunities.
               </span>
             )}
           </div>
@@ -543,13 +528,18 @@ export default function Home() {
                     {[
                       "Score",
                       "Decision",
-                      "Opportunity",
+                      "Review",
+                      "Technical",
+                      "Opportunity URL",
                       "Domain",
                       "Location",
                       "Relevance",
-                      "DR",
-                      "Traffic",
-                      "HTTPS",
+                      "Pricing",
+                      "Payment Type",
+                      "Current Sponsors Linked",
+                      "Contact Page URL",
+                      "Contact Fallback",
+                      "Submission method",
                       "Trigger",
                       "Query",
                     ].map((h) => (
@@ -587,27 +577,121 @@ export default function Home() {
                               ))}
                             </select>
                           </td>
-                          <td className="px-3 py-2">
-                            <a
-                              href={o["Sponsorship URL"]}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline dark:text-blue-400"
-                            >
-                              {o["Opportunity Name"] || o.Domain}
-                            </a>
+                          <td className="px-3 py-2 text-xs">{o["Review Status"] ?? "Needs Review"}</td>
+                          <td className="px-3 py-2 text-xs">{o["Technical Status"] ?? "Pending crawl"}</td>
+                          <td className="px-3 py-2 min-w-[18rem]">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="url"
+                                value={o["Opportunity URL"] || o["Sponsorship URL"] || ""}
+                                onChange={(e) =>
+                                  handleRowChange(rowKey, {
+                                    "Opportunity URL": e.target.value,
+                                    "Sponsorship URL": e.target.value,
+                                  })
+                                }
+                                className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              {(o["Opportunity URL"] || o["Sponsorship URL"]) && (
+                                <a
+                                  href={o["Opportunity URL"] || o["Sponsorship URL"]}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="shrink-0 text-blue-600 hover:underline dark:text-blue-400 text-xs"
+                                >
+                                  Open
+                                </a>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2 font-mono text-xs">{o.Domain}</td>
                           <td className="px-3 py-2 text-xs">
                             {o.Location}
                             <span className="ml-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                              {o["Resolved Location Scope"]}
+                              {o["Location Classification"] ?? o["Resolved Location Scope"]}
                             </span>
                           </td>
                           <td className="px-3 py-2">{o["Local Relevance Rating"]}</td>
-                          <td className="px-3 py-2 tabular-nums">{String(o.DR)}</td>
-                          <td className="px-3 py-2 tabular-nums">{String(o.Traffic)}</td>
-                          <td className="px-3 py-2">{o.HTTPS}</td>
+                          <td className="px-3 py-2 min-w-[10rem]">
+                            <input
+                              value={o["Payment Amount"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Payment Amount": e.target.value,
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-3 py-2 min-w-[10rem]">
+                            <select
+                              value={o["Payment Type"] || "Unknown"}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Payment Type": e.target.value as Opportunity["Payment Type"],
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="One-Time">One-Time</option>
+                              <option value="Per event">Per event</option>
+                              <option value="Annual">Annual</option>
+                              <option value="Monthly">Monthly</option>
+                              <option value="Recurring">Recurring</option>
+                              <option value="Free">Free</option>
+                              <option value="Unknown">Unknown</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 min-w-[10rem]">
+                            <select
+                              value={o["Current Sponsors Linked"] || "Unknown"}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Current Sponsors Linked": e.target.value as Opportunity["Current Sponsors Linked"],
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="Yes">Yes</option>
+                              <option value="No">No</option>
+                              <option value="Unknown">Unknown</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 min-w-[14rem]">
+                            <input
+                              type="url"
+                              placeholder="https://..."
+                              value={o["Contact Page URL"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Contact Page URL": e.target.value,
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {o["Contact Page Fallback Used"] === "Yes" && (
+                              <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-[10px] uppercase font-semibold text-amber-800">
+                                Fallback
+                              </span>
+                            )}
+                            {o["Contact Page Fallback Used"] !== "Yes" && (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 min-w-[10rem]">
+                            <input
+                              value={o["Submission Method"] || ""}
+                              onChange={(e) =>
+                                handleRowChange(rowKey, {
+                                  "Submission Method": e.target.value as Opportunity["Submission Method"],
+                                })
+                              }
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Human Review Trigger"]}</td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Search Query Used"]}</td>
                         </tr>
@@ -615,7 +699,7 @@ export default function Home() {
                   })}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="px-3 py-8 text-center text-zinc-500">
+                      <td colSpan={16} className="px-3 py-8 text-center text-zinc-500">
                         No rows match the current filter.
                       </td>
                     </tr>
@@ -746,6 +830,11 @@ function SummaryPanel({
   return (
     <div className="rounded-lg border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900">Run summary</h2>
+      {result.warning && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {result.warning}
+        </div>
+      )}
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm md:grid-cols-4">
         <div>
           <dt className="text-slate-600">Client</dt>

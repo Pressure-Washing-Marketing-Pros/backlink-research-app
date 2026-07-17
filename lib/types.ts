@@ -118,7 +118,7 @@ export type LinkOpportunityStatus =
   | "Probable"
   | "Unclear"
   | "No Link Opportunity";
-export type PaymentType = "One-Time" | "Annual" | "Monthly" | "Recurring" | "Unknown";
+export type PaymentType = "One-Time" | "Per event" | "Annual" | "Monthly" | "Recurring" | "Free" | "Unknown" | "Other";
 export type SubmissionMethod = "Form" | "Email" | "Phone" | "PDF Package" | "Unknown";
 export type Decision = "Approve" | "Reject" | "Needs Human Review";
 export type ApprovalStatus = "approved" | "review" | "rejected";
@@ -254,6 +254,7 @@ export interface Opportunity {
   "Source Query Scopes": string;
   "SERP Prequalification Status"?:
     | "Qualified for Firecrawl"
+    | "Qualified for DataForSEO OnPage"
     | "Rejected at SERP Filter"
     | "Skipped Duplicate"
     | "Needs SERP Review";
@@ -280,6 +281,8 @@ export interface Opportunity {
   "Submission URL": string;
   "Contact Email": string;
   "Contact Person": string;
+  "Contact Page URL"?: string;
+  "Contact Page Fallback Used"?: "Yes" | "No";
   "Event Date"?: string;
   Deadline?: string;
   "Rejection Reason"?:

@@ -31,6 +31,7 @@ function check(name: string, fn: () => void): void {
 
 const base = {
   budget: 300,
+  budgetExceptionsAllowed: false,
   firecrawlStatus: "success" as const,
   contentLength: 5000,
   sponsorshipTerms: [] as string[],
@@ -316,7 +317,7 @@ check("DR 20 + everything matched → rejected (below DR 25)", () => {
   assert.equal(d.approvalStatus, "rejected");
   assert.equal(d.rejectionCategory, "DR below threshold");
 });
-check("only $500 (budget $300) → rejected, never approved", () => {
+check("only $500 (budget $300) → review (over budget), never approved", () => {
   const d = decideStatus({
     ...base,
     dr: 30,
@@ -326,6 +327,20 @@ check("only $500 (budget $300) → rejected, never approved", () => {
     lowestPrice: 500,
   });
   assert.notEqual(d.approvalStatus, "approved");
+  assert.equal(d.approvalStatus, "review");
+  assert.equal(d.rejectionCategory, "Over budget");
+});
+check("over budget + budget exceptions allowed → review (not reject)", () => {
+  const d = decideStatus({
+    ...base,
+    budgetExceptionsAllowed: true,
+    dr: 30,
+    sponsorshipTerms: ["sponsor"],
+    backlinkTerms: ["website link"],
+    prices: [500],
+    lowestPrice: 500,
+  });
+  assert.equal(d.approvalStatus, "review");
   assert.equal(d.rejectionCategory, "Over budget");
 });
 check("Firecrawl failure → review, never approved", () => {
@@ -336,6 +351,7 @@ check("Firecrawl failure → review, never approved", () => {
 check("DR unavailable → review", () => {
   const d = decideStatus({ ...base, dr: null });
   assert.equal(d.approvalStatus, "review");
+  assert.ok(!d.approvalReason.includes("to save Firecrawl credits"));
 });
 check("very short scraped content → review", () => {
   const d = decideStatus({ ...base, dr: 30, contentLength: 50 });

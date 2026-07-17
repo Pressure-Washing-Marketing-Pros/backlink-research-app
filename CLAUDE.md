@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project goal
 
-Sponsorship backlink research system. Discovers and evaluates sponsorship-style link opportunities by combining Google SERP results (DataForSEO) with domain authority metrics (Ahrefs), applying a documented decision-logic SOP, and exporting qualified prospects to CSV. Deploy target is Vercel.
+Sponsorship research and database-building system. Discovers local sponsorship opportunities by geographic location using DataForSEO SERP, OnPage, and Content Analysis APIs. Results require human review before approval. Exports qualified prospects to CSV and stores approved/review opportunities in a searchable Sponsorship Repository. Deploy target is Vercel.
 
 ## Tech stack
 
@@ -29,44 +29,50 @@ Sponsorship backlink research system. Discovers and evaluates sponsorship-style 
 
 Put these in `.env.local` (gitignored) for local dev, and mirror them in Vercel Project Settings → Environment Variables for deployment. They must only be read from Route Handlers / Server Components — never expose to the client.
 
-- `DATAFORSEO_LOGIN` — DataForSEO account login (used in Basic auth)
-- `DATAFORSEO_PASSWORD` — DataForSEO account password (used in Basic auth)
-- `AHREFS_API_TOKEN` — Ahrefs API bearer token
-- `DATABASE_URL` — Neon Postgres (inventory + crawl cache)
-- `ANTHROPIC_API_KEY` — Anthropic Claude API key (required for Claude scraping strategy)
+**Sponsorship Research Pipeline:**
+- `DATAFORSEO_LOGIN` — DataForSEO account login (used in Basic auth for SERP, OnPage, Content Analysis)
+- `DATAFORSEO_PASSWORD` — DataForSEO account password (used in Basic auth for SERP, OnPage, Content Analysis)
+- `DATABASE_URL` — Neon Postgres (Sponsorship Repository + research history)
 
-Optional scraping & tuning (defaults live in `lib/sponsorshipConfig.ts` and `lib/scrape-strategy.ts`):
+**Tuning (optional):**
+- `SERP_CONCURRENCY` — parallel SERP requests (default: 2)
+- `ONPAGE_CONCURRENCY` — parallel OnPage crawls (default: 6)
+- `CONTENT_ANALYSIS_CONCURRENCY` — parallel Content Analysis calls (default: 6)
+- `MAX_CANDIDATES_PER_QUERY` — max results per SERP query (default: 8)
+- `ONPAGE_TIMEOUT_MS` — timeout per OnPage crawl (default: 9,000ms)
+- `RUN_TIMEOUT_MS` — overall research run timeout (default: 295,000ms for Vercel 300s function limit)
 
-- `SCRAPE_STRATEGY` — page scraping backend (default: `claude-fallback`)
-  - `firecrawl` — Firecrawl only (1,000 pages/mo free, 2 concurrent)
-  - `claude` — Claude only (no monthly limit, higher concurrency)
-  - `claude-fallback` — Try Firecrawl first, fall back to Claude on failure
-- `FIRECRAWL_API_KEY` — Firecrawl API key (only needed if using Firecrawl strategy)
-- `FIRECRAWL_MAX_URLS_PER_RUN` — per-run scrape cap (default 50)
-- `CRAWL_CACHE_TTL_DAYS` — successful-crawl reuse window in days (default 60)
+## Research pipeline (DataForSEO-based sponsorship discovery)
 
-## Research pipeline (strict scrape-and-match)
+`lib/runResearch.ts` executes this strict order to protect API credits:
 
-`lib/runResearch.ts` orders stages so paid APIs are spent last:
-DataForSEO SERP → URL normalize + dedup (`lib/urlNormalize.ts`) → spam-domain
-reject → Ahrefs DR gate (DR ≥ 25, `lib/sponsorshipConfig.ts`) → page scraping
-(`lib/firecrawl.ts` or `lib/claude-scraper.ts`, with 60-day cache) → strict
-keyword/price matching on scraped content (`lib/pageAnalysis.ts`). 
+1. **Input validation** (`lib/queryBank.ts`) — ensure city, state, state_abbrev are present
+2. **Query generation** (`lib/queryBank.ts`) — render full location-based query bank (city-level, county-level, state-level)
+3. **SERP retrieval** (`lib/dataforseo.ts` → `serpQuery`) — fetch Google results for all queries
+4. **URL normalization + dedup** (`lib/urlNormalize.ts`) — deduplicate URLs across results
+5. **Pre-crawl duplicate check** — skip known approved, needs-review, and rejected records
+6. **SERP-level relevance filter** (`lib/runResearch.ts` → `isRelevantSerpResult`) — remove obvious non-sponsorship pages before API spend
+7. **DataForSEO OnPage crawl** (`lib/dataforseo.ts` → `onPageAnalyzeUrl`) — crawl qualified URLs, with fallback to JavaScript rendering for empty pages
+8. **Direct sponsorship page discovery** (`lib/runResearch.ts` → `findBestSponsorshipLink`) — detect sponsor/partnership links, crawl them
+9. **Post-crawl duplicate check** — skip redirects and canonical duplicates
+10. **DataForSEO Content Analysis** (`lib/dataforseo.ts` → `contentAnalyze`) — extract sponsorship signals, pricing, contact info
+11. **Create Needs Review record** — all new opportunities default to human review, never auto-approved
+12. **Human review + editing** — reviewer can modify any field before approval
+13. **Approval duplicate check** — final check before saving to Sponsorship Repository
+14. **Save to database** — store approved or reviewed opportunities
 
-**Scraping strategies** (`lib/scrape-strategy.ts`):
-- **Firecrawl** (default legacy): Static HTML extraction, 1,000 pages/mo free, 2 concurrent
-- **Claude** (new): HTML → semantic analysis + decision logic in one call, higher concurrency, token-based pricing
-- **Claude-fallback** (recommended): Try Firecrawl first, fall back to Claude on failure
+**Decision workflow:**
+- No Ahrefs metrics used — location relevance is the primary factor
+- No budget filtering — pricing is informational only
+- No HTTPS requirement — HTTP pages are acceptable
+- No automatic rejections — failed/empty crawls route to human review
+- No Firecrawl dependency — uses DataForSEO OnPage exclusively for crawling
 
-Approval is never based on SERP titles/snippets or URL text — only scraped page content + DR. Missing core data always routes to review, never to approve.
+## External inputs (current repo paths)
 
-## External inputs (provided, not yet wired up)
-
-The user supplies these — when added to the repo, update this section with exact paths:
-
-- **Sponsorship SOP** — workflow rules for qualifying sponsorship backlink prospects
-- **SKILL.md** — decision logic for grading / filtering prospects
-- **Query bank** — list of search queries fed into DataForSEO SERP
+- **Sponsorship SOP** — `skills/sponsorship/SOP.md`
+- **SKILL.md** — `skills/sponsorship/SKILL.md`
+- **Query bank** — `skills/sponsorship/query-bank.csv` (wired via `lib/queryBank.ts`)
 
 ## Version 1 scope
 
@@ -77,4 +83,4 @@ The user supplies these — when added to the repo, update this section with exa
 5. Render results in a sortable, filterable table UI
 6. Export qualified prospects to CSV
 
-Out of scope for v1: outreach tracking, multi-user auth, persistent database, scheduled re-runs.
+Out of scope for v1: outreach tracking, multi-user auth, scheduled re-runs.

@@ -318,13 +318,13 @@ export async function saveOpportunitiesToDb(
         sql.query(
           `UPDATE opportunities SET
              dr = $1, organic_traffic = $2, payment_amount = $3, payment_type = $4,
-             submission_method = $5, contact_email = $6, link_evidence = $7,
-             link_opportunity_status = $8, decision = $9, human_review_trigger = $10,
-             score = $11, notes = $12, normalized_url = $13, location = $14,
-             city = $15, county = $16, resolved_location_scope = $17,
-             location_confidence = $18, location_evidence = $19, source_query_scopes = $20,
-             run_id = $21, updated_at = $22, last_checked_at = $22
-           WHERE id = $23`,
+             submission_method = $5, contact_email = $6, contact_page_url = $7, contact_page_fallback_used = $8,
+             link_evidence = $9, link_opportunity_status = $10, decision = $11, human_review_trigger = $12,
+             score = $13, notes = $14, normalized_url = $15, location = $16,
+             city = $17, county = $18, resolved_location_scope = $19,
+             location_confidence = $20, location_evidence = $21, source_query_scopes = $22,
+             run_id = $23, updated_at = $24, last_checked_at = $24
+           WHERE id = $25`,
           [
             finalDr,
             finalTraffic,
@@ -332,6 +332,8 @@ export async function saveOpportunitiesToDb(
             opp["Payment Type"],
             opp["Submission Method"],
             opp["Contact Email"],
+            opp["Contact Page URL"],
+            opp["Contact Page Fallback Used"],
             opp["Link Evidence"],
             opp["Link Opportunity Status"],
             opp.Decision,
@@ -370,7 +372,7 @@ export async function saveOpportunitiesToDb(
           local_relevance_notes, current_sponsors_displayed, current_sponsors_linked,
           link_opportunity_status, link_evidence, payment_amount, payment_type,
           cheapest_tier_with_link, tier_name, submission_method, submission_url,
-          contact_email, contact_person, dr, da, organic_traffic, https,
+          contact_email, contact_person, contact_page_url, contact_page_fallback_used, dr, da, organic_traffic, https,
           freshness_notes, notes, decision, human_review_trigger, score,
           search_query_used, client_origin, run_id, normalized_url, duplicate_of,
           resolved_location_scope, location_confidence, location_evidence, source_query_scopes,
@@ -378,7 +380,7 @@ export async function saveOpportunitiesToDb(
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
           $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46
+          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48
         )
         ON CONFLICT (domain, sponsorship_url) DO UPDATE SET
           updated_at = EXCLUDED.updated_at,
@@ -412,6 +414,8 @@ export async function saveOpportunitiesToDb(
           opp["Submission URL"],
           opp["Contact Email"],
           opp["Contact Person"],
+          opp["Contact Page URL"],
+          opp["Contact Page Fallback Used"],
           opp.DR === "Unknown" ? null : opp.DR,
           opp.DA === "Unknown" ? null : opp.DA,
           opp.Traffic === "Unknown" ? null : opp.Traffic,
@@ -513,17 +517,36 @@ export async function updateOpportunityDecision(
   id: string,
   decision: string,
   reviewNote?: string,
+  rejectionReason?: string,
+  rejectionNotes?: string,
 ): Promise<boolean> {
   const sql = getSql();
   const now = Math.floor(Date.now() / 1000);
+  const reviewStatus =
+    decision === "Approve"
+      ? "Approved"
+      : decision === "Reject"
+        ? "Rejected"
+        : "Needs Review";
   const rows = await sql.query(
     `UPDATE opportunities
        SET decision = $1,
-           notes = CASE WHEN $2::text IS NOT NULL THEN COALESCE(notes, '') || ' ' || $2 ELSE notes END,
-           updated_at = $3
-     WHERE id = $4
+           review_status = $2,
+           rejection_reason = CASE WHEN $1 = 'Reject' THEN $3 ELSE NULL END,
+           rejection_notes = CASE WHEN $1 = 'Reject' THEN $4 ELSE NULL END,
+           notes = CASE WHEN $5::text IS NOT NULL THEN COALESCE(notes, '') || ' ' || $5 ELSE notes END,
+               updated_at = $6
+             WHERE id = $7
      RETURNING id`,
-    [decision, reviewNote ?? null, now, id],
+    [
+      decision,
+      reviewStatus,
+      rejectionReason ?? null,
+      rejectionNotes ?? null,
+      reviewNote ?? null,
+      now,
+      id,
+    ],
   );
   return rows.length > 0;
 }
@@ -673,6 +696,99 @@ export async function getCachedCrawls(
     });
   }
   return map;
+}
+
+export async function getExistingInventoryDomains(
+  domains: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (domains.length === 0) return out;
+  const sql = getSql();
+  const normalized = Array.from(
+    new Set(domains.map((d) => d.trim().toLowerCase()).filter(Boolean)),
+  );
+  if (normalized.length === 0) return out;
+  const rows = (await sql.query(
+    `SELECT LOWER(domain) AS domain FROM opportunities WHERE LOWER(domain) = ANY($1)`,
+    [normalized],
+  )) as Array<{ domain: string }>;
+  for (const row of rows) {
+    if (row.domain) out.add(row.domain);
+  }
+  return out;
+}
+
+export interface ExistingOpportunitySignal {
+  domain: string;
+  decision: string | null;
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  metro: string | null;
+  normalized_url: string | null;
+}
+
+export async function getExistingOpportunitySignals(
+  domains: string[],
+): Promise<ExistingOpportunitySignal[]> {
+  if (domains.length === 0) return [];
+  const sql = getSql();
+  const normalized = Array.from(
+    new Set(domains.map((d) => d.trim().toLowerCase()).filter(Boolean)),
+  );
+  if (normalized.length === 0) return [];
+  try {
+    const rows = (await sql.query(
+      `SELECT
+        LOWER(domain) AS domain,
+        decision,
+        city,
+        county,
+        state,
+        metro,
+        normalized_url
+      FROM opportunities
+      WHERE LOWER(domain) = ANY($1)`,
+      [normalized],
+    )) as Array<{
+      domain: string;
+      decision: string | null;
+      city: string | null;
+      county: string | null;
+      state: string | null;
+      metro: string | null;
+      normalized_url: string | null;
+    }>;
+    return rows;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/column\s+"metro"\s+does\s+not\s+exist/i.test(message)) {
+      throw error;
+    }
+
+    const rows = (await sql.query(
+      `SELECT
+        LOWER(domain) AS domain,
+        decision,
+        city,
+        county,
+        state,
+        NULL::text AS metro,
+        normalized_url
+      FROM opportunities
+      WHERE LOWER(domain) = ANY($1)`,
+      [normalized],
+    )) as Array<{
+      domain: string;
+      decision: string | null;
+      city: string | null;
+      county: string | null;
+      state: string | null;
+      metro: string | null;
+      normalized_url: string | null;
+    }>;
+    return rows;
+  }
 }
 
 export async function upsertCrawlCache(entry: CrawlCacheEntry): Promise<void> {

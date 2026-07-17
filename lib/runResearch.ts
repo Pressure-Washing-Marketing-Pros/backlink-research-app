@@ -1,5 +1,17 @@
 import "server-only";
 
+// SAFEGUARD: This module performs research and data extraction only.
+// It must NEVER:
+// - Send emails or contact organizations
+// - Submit forms or applications
+// - Charge payment or make purchases
+// - Take automated actions on external websites
+// - Accept terms on behalf of clients
+// - Upload client logos or information without explicit human authorization
+//
+// All contact information (email, phone, submission URLs) are extracted for
+// MANUAL REVIEW and HUMAN-AUTHORIZED outreach only.
+
 import { classifyLocalRelevance } from "@/lib/decision";
 import {
   contentAnalyze,
@@ -167,6 +179,85 @@ function findBestSponsorshipLink(page: OnPageResult): string | null {
   return null;
 }
 
+function detectCurrentSponsorsLinked(page: OnPageResult): "Yes" | "No" | "Unknown" {
+  // Look for sponsor-related elements (images, headings) that have outbound links.
+  const sponsorPatterns = [
+    /sponsor/i,
+    /partner/i,
+    /supporter/i,
+    /contributor/i,
+    /donor/i,
+  ];
+
+  // Check if any external links have sponsor-related text nearby
+  const externalLinks = page.externalLinks;
+  const headingsText = page.headings.join(" ").toLowerCase();
+  const textContent = page.text.toLowerCase();
+
+  // If there are external links AND sponsorship-related headings/text, likely they're linked
+  if (externalLinks.length > 0) {
+    const hasSponsorContext = sponsorPatterns.some(
+      (p) => p.test(headingsText) || p.test(textContent)
+    );
+    if (hasSponsorContext) {
+      // Check if any external links appear to be to sponsor domains (not social media)
+      const sponsorLinks = externalLinks.filter(
+        (link) =>
+          !/(facebook|instagram|twitter|linkedin|tiktok|youtube|pinterest)\.com/i.test(
+            link.url,
+          )
+      );
+      if (sponsorLinks.length > 0) {
+        return "Yes";
+      }
+    }
+  }
+
+  // If we have sponsor content but no clear external links, it's probably "No"
+  if (sponsorPatterns.some((p) => p.test(headingsText) || p.test(textContent))) {
+    return "No";
+  }
+
+  return "Unknown";
+}
+
+function detectPaymentType(text: string): PaymentType {
+  const lower = text.toLowerCase();
+
+  // Check for specific payment frequencies in order of specificity
+  if (/annual|per year|yearly|each year/i.test(lower)) return "Annual";
+  if (/per event|for the.*race|for the.*festival|for the.*event|for the.*marathon/i.test(lower))
+    return "Per event";
+  if (/monthly|per month/i.test(lower)) return "Monthly";
+  if (/one.?time|one.?off|single payment/i.test(lower)) return "One-Time";
+  if (/recurring|ongoing partnership/i.test(lower)) return "Recurring";
+  if (/free|no charge|complimentary/i.test(lower)) return "Free";
+
+  // Don't infer Annual just because the organization is annual
+  return "Unknown";
+}
+
+function findBestContactLink(page: OnPageResult): string | null {
+  const allLinks = [...page.internalLinks, ...page.externalLinks];
+  const contactPatterns = [
+    /contact\s*us?$/i,
+    /^contact$/i,
+    /get\s*in\s*touch/i,
+    /connect\s*with\s*us/i,
+    /reach\s*us/i,
+    /get\s*involved/i,
+    /about\s*us$/i,
+    /support/i,
+  ];
+
+  for (const link of allLinks) {
+    const anchor = link.anchor.toLowerCase();
+    if (contactPatterns.some((p) => p.test(anchor))) return link.url;
+  }
+
+  return null;
+}
+
 function hasFastSponsorshipSignal(page: OnPageResult): boolean {
   const blob = `${page.title}\n${page.metaDescription}\n${page.headings.join("\n")}\n${page.text}`.toLowerCase();
   if (/sponsor|sponsorship|become a sponsor|partner with us|vendor|prospectus|media kit|donate|support/i.test(blob)) {
@@ -277,8 +368,30 @@ function makeOpportunity(args: {
   searchQueryUsed: string;
   usedJs: boolean;
   redirected: boolean;
+  currentSponsorsLinked?: "Yes" | "No" | "Unknown";
+  paymentType?: PaymentType;
+  contactPageUrl?: string;
+  contactPageFallbackUsed?: "Yes" | "No";
 }): Opportunity {
-  const { inputs, serp, opportunityUrl, sponsorPageUrl, sourceUrl, text, title, technicalStatus, technicalNotes, hasSponsorship, searchQueryUsed, usedJs, redirected } = args;
+  const {
+    inputs,
+    serp,
+    opportunityUrl,
+    sponsorPageUrl,
+    sourceUrl,
+    text,
+    title,
+    technicalStatus,
+    technicalNotes,
+    hasSponsorship,
+    searchQueryUsed,
+    usedJs,
+    redirected,
+    currentSponsorsLinked,
+    paymentType,
+    contactPageUrl,
+    contactPageFallbackUsed,
+  } = args;
 
   const pricing = toPricing(text);
   const relevance = classifyLocalRelevance(serp, inputs);
@@ -315,14 +428,14 @@ function makeOpportunity(args: {
     Location: `${inputs.client_primary_city}, ${inputs.client_state}`,
     "Location Classification": classification,
     "Source Query Scopes": serp.query_scope ?? "state",
-    "SERP Prequalification Status": "Qualified for Firecrawl",
+    "SERP Prequalification Status": "Qualified for DataForSEO OnPage",
     "Resolved Location Scope": serp.query_scope ?? "state",
     "Location Confidence": relevance.rating === "High" ? "high" : relevance.rating === "Medium" ? "medium" : "low",
     "Location Evidence": relevance.notes,
     "Local Relevance Rating": relevance.rating,
     "Local Relevance Notes": relevance.notes,
     "Current Sponsors Displayed Publicly": "Unknown",
-    "Current Sponsors Linked": "Unknown",
+    "Current Sponsors Linked": currentSponsorsLinked ?? "Unknown",
     "Link Opportunity Status": "Unclear",
     "Link Evidence": "Manual verification required.",
     "Payment Amount": pricing.amount,
@@ -331,13 +444,15 @@ function makeOpportunity(args: {
     "Cheapest Tier With Link": "Unknown",
     "Website Link Included": "Unknown",
     "Logo Included": "Unknown",
-    "Payment Type": "Unknown" as PaymentType,
+    "Payment Type": paymentType ?? "Unknown",
     "Payment Method": "Unknown",
     "Tier Name": "Unknown",
     "Submission Method": "Unknown",
     "Submission URL": "",
     "Contact Email": "",
     "Contact Person": "",
+    "Contact Page URL": contactPageUrl,
+    "Contact Page Fallback Used": contactPageFallbackUsed,
     "Event Date": "",
     Deadline: "",
     DR: "Unknown",
@@ -541,6 +656,7 @@ export async function runResearch(
 
   const analyzed = await runWithConcurrency(toAnalyze, contentConc, async (item) => {
     let workingPage = item.page;
+    let sponsorshipPageFound = false;
 
     const betterLink = findBestSponsorshipLink(workingPage);
     if (betterLink && betterLink !== workingPage.finalUrl) {
@@ -552,6 +668,18 @@ export async function runResearch(
       if (better?.ok) {
         onpageStandardCompleted++;
         workingPage = better;
+        sponsorshipPageFound = true;
+      }
+    }
+
+    // If no sponsorship page was found, look for a contact page fallback
+    let contactPageUrl: string | undefined;
+    let contactPageFallbackUsed: "Yes" | "No" = "No";
+    if (!sponsorshipPageFound && !hasFastSponsorshipSignal(workingPage)) {
+      const contactLink = findBestContactLink(item.page); // Use original page, not working page
+      if (contactLink) {
+        contactPageUrl = contactLink;
+        contactPageFallbackUsed = "Yes";
       }
     }
 
@@ -587,11 +715,18 @@ export async function runResearch(
     if (hasSponsorship) sponsorshipFound++;
     else noSponsorshipFound++;
 
+    const currentSponsorsLinked = detectCurrentSponsorsLinked(workingPage);
+    const paymentType = detectPaymentType(combinedText);
+
     return {
       c: item.c,
       page: workingPage,
       contentRes,
       hasSponsorship,
+      currentSponsorsLinked,
+      paymentType,
+      contactPageUrl,
+      contactPageFallbackUsed,
     };
   });
 
@@ -613,6 +748,10 @@ export async function runResearch(
         searchQueryUsed: item.c.serp.search_query_used,
         usedJs: item.page.usedJavaScript,
         redirected: normalizeUrl(item.page.finalUrl)?.key !== normalizeUrl(item.c.fetchUrl)?.key,
+        currentSponsorsLinked: item.currentSponsorsLinked,
+        paymentType: item.paymentType,
+        contactPageUrl: item.contactPageUrl,
+        contactPageFallbackUsed: item.contactPageFallbackUsed,
       }),
     );
   }

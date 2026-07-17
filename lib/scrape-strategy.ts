@@ -1,5 +1,4 @@
 import "server-only";
-import type { SponsorshipCrawlResult } from "@/lib/types";
 
 export type ScrapeStrategy = "firecrawl" | "claude" | "claude-fallback";
 

@@ -1,6 +1,10 @@
 import { saveOpportunitiesToDb } from "@/lib/db";
 import type { RunResult } from "@/lib/types";
 
+// SAFEGUARD: This endpoint stores opportunity data in the Sponsorship Repository.
+// It does NOT trigger outreach, submit forms, or take external actions.
+// Contact information is stored for HUMAN-AUTHORIZED review and action only.
+
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {

@@ -168,7 +168,7 @@ export function renderQueries(inputs: ClientInputs): RenderedQuery[] {
 export function validateInputs(
   inputs: Partial<ClientInputs>,
 ): { ok: true; inputs: ClientInputs } | { ok: false; missing: string[] } {
-  const required: (keyof ClientInputs)[] = ["client_primary_city", "client_state"];
+  const required: (keyof ClientInputs)[] = ["client_primary_city", "client_state", "state_abbrev"];
   const missing: string[] = [];
   for (const k of required) {
     const v = inputs[k];
@@ -183,9 +183,9 @@ export function validateInputs(
     client_state: inputs.client_state!,
     client_niche: inputs.client_niche ?? "",
     preferred_landing_page_url: inputs.preferred_landing_page_url ?? "",
-    maximum_approved_budget: inputs.maximum_approved_budget ?? 0,
-    budget_exceptions_allowed: inputs.budget_exceptions_allowed ?? "No",
-    state_abbrev: inputs.state_abbrev,
+    maximum_approved_budget: inputs.maximum_approved_budget,
+    budget_exceptions_allowed: inputs.budget_exceptions_allowed,
+    state_abbrev: inputs.state_abbrev!,
     county: inputs.county,
     metro: inputs.metro,
     service_area_cities: inputs.service_area_cities,

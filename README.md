@@ -1,48 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sponsorship Backlink Research App
 
-## Getting Started
+Research and qualify sponsorship backlink opportunities by combining Google SERP discovery (DataForSEO), domain metrics (Ahrefs), and strict page-level analysis.
 
-First, configure the required API credentials in a local env file or your deployment platform.
+## Stack
 
-Create `.env.local` with:
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS v4
+- Neon Postgres (inventory + crawl cache)
 
-```bash
+## Features
+
+- Query-bank driven SERP discovery
+- URL/domain dedup and hard pre-filters
+- Ahrefs DR gating before scraping
+- Strategy-based scraping: Firecrawl, Claude, or Claude-fallback
+- Strict decision engine: Approve / Needs Human Review / Reject
+- Inventory dashboard with filters, sorting, refresh, and CSV export
+
+## Required Environment Variables
+
+Set these in .env.local for local development:
+
 DATAFORSEO_LOGIN=your-dataforseo-login
 DATAFORSEO_PASSWORD=your-dataforseo-password
 AHREFS_API_TOKEN=your-ahrefs-api-token
-```
+DATABASE_URL=your-neon-database-url
 
-Then run the development server:
+Strategy-dependent scraping keys:
 
-```bash
+- If SCRAPE_STRATEGY=firecrawl: set FIRECRAWL_API_KEY
+- If SCRAPE_STRATEGY=claude: set ANTHROPIC_API_KEY
+- If SCRAPE_STRATEGY=claude-fallback: set at least one of FIRECRAWL_API_KEY or ANTHROPIC_API_KEY
+
+Optional:
+
+SCRAPE_STRATEGY=claude-fallback
+FIRECRAWL_MAX_URLS_PER_RUN=50
+CLAUDE_MAX_URLS_PER_RUN=10
+CLAUDE_FALLBACK_MAX_URLS_PER_RUN=20
+CRAWL_CACHE_TTL_DAYS=60
+MAX_QUERIES_PER_RUN=6
+MAX_CANDIDATES_PER_QUERY=8
+
+## Run
+
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-Use the built-in form to run the research workflow against DataForSEO and Ahrefs.
+## Commands
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- npm run dev - start development server
+- npm run build - production build
+- npm run start - serve production build
+- npm run lint - lint checks
+- npm test - rule-based analyzer validation
+- npm run migrate - apply database schema migrations
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Paths
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- app/page.tsx - research runner UI
+- app/dashboard/page.tsx - sponsorship inventory UI
+- app/api/run/route.ts - research run endpoint
+- lib/runResearch.ts - end-to-end pipeline
+- lib/pageAnalysis.ts - strict decision logic
+- lib/queryBank.ts - query bank renderer
+- skills/sponsorship/query-bank.csv - source query templates

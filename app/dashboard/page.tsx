@@ -91,6 +91,26 @@ function duplicateLabel(opp: StoredOpportunity): string | null {
   return null;
 }
 
+function inferBudgetFit(opp: StoredOpportunity): "In Budget" | "Over Budget" | "Price Unknown" {
+  const trigger = (opp.human_review_trigger ?? "").toLowerCase();
+  const notes = (opp.notes ?? "").toLowerCase();
+  const amount = (opp.payment_amount ?? "").toLowerCase();
+  if (!amount || amount === "unknown") return "Price Unknown";
+  if (trigger.includes("over budget") || notes.includes("over budget") || notes.includes("above the $") || trigger.includes("above the $")) {
+    return "Over Budget";
+  }
+  if (notes.includes("within the $") || trigger.includes("in budget")) {
+    return "In Budget";
+  }
+  return "Price Unknown";
+}
+
+function budgetFitBadgeClass(status: "In Budget" | "Over Budget" | "Price Unknown"): string {
+  if (status === "In Budget") return "bg-green-100 text-green-800";
+  if (status === "Over Budget") return "bg-amber-100 text-amber-800";
+  return "bg-gray-100 text-gray-700";
+}
+
 export default function Dashboard() {
   const [opportunities, setOpportunities] = useState<StoredOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -690,6 +710,9 @@ export default function Dashboard() {
                             Package / Payment
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Budget Fit
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Last Checked
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
@@ -759,6 +782,13 @@ export default function Dashboard() {
                                 {opp.payment_amount || "Unknown"}
                                 {opp.payment_type ? ` (${opp.payment_type})` : ""}
                               </td>
+                              <td className="px-4 py-4 text-xs">
+                                <span
+                                  className={`inline-block px-2 py-1 rounded text-[11px] font-medium ${budgetFitBadgeClass(inferBudgetFit(opp))}`}
+                                >
+                                  {inferBudgetFit(opp)}
+                                </span>
+                              </td>
                               <td className="px-4 py-4 text-xs text-gray-500">
                                 {formatDate(opp.last_checked_at)}
                               </td>
@@ -790,7 +820,7 @@ export default function Dashboard() {
                             </tr>
                             {expandedId === opp.id && (
                               <tr className="bg-gray-50">
-                                <td colSpan={9} className="px-6 py-4">
+                                <td colSpan={10} className="px-6 py-4">
                                   <div className="grid gap-4 md:grid-cols-2 text-sm">
                                     <div className="space-y-2">
                                       <div>
