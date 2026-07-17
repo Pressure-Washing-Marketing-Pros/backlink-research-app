@@ -163,7 +163,7 @@ export interface SearchFilters {
   paymentType?: string;
   limit?: number;
   offset?: number;
-  sortBy?: "created" | "dr" | "traffic" | "score";
+  sortBy?: "created" | "dr" | "traffic" | "payment_amount" | "score";
   sortOrder?: "ASC" | "DESC";
 }
 
@@ -881,10 +881,12 @@ export async function searchOpportunities(filters: SearchFilters): Promise<{
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
   // Whitelisted, never user-controlled — safe to interpolate.
-  const sortColumn =
-    ({ created: "created_at", dr: "dr", traffic: "organic_traffic", score: "score" } as const)[
-      sortBy
-    ] || "created_at";
+  let sortColumn = "created_at";
+  if (sortBy === "dr") sortColumn = "dr";
+  else if (sortBy === "traffic") sortColumn = "organic_traffic";
+  else if (sortBy === "score") sortColumn = "score";
+  else if (sortBy === "payment_amount")
+    sortColumn = "CAST(NULLIF(payment_amount, 'Unknown') AS NUMERIC)";
 
   const countRows = await sql.query(
     `SELECT COUNT(*)::int AS count FROM opportunities ${whereClause}`,

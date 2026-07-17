@@ -6,6 +6,7 @@ import {
   deleteOpportunity,
 } from "@/lib/db";
 import { contentAnalyze, onPageAnalyzeUrl } from "@/lib/dataforseo";
+import { neon } from "@neondatabase/serverless";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -175,6 +176,41 @@ export async function PATCH(
       }
 
       return Response.json({ success: true, note });
+    }
+
+    if (body.action === "updateTiers") {
+      const { sponsorship_tiers, cheapest_tier_with_link } = body as {
+        sponsorship_tiers?: string;
+        cheapest_tier_with_link?: string;
+      };
+
+      if (!sponsorship_tiers) {
+        return Response.json(
+          { error: "sponsorship_tiers is required" },
+          { status: 400 },
+        );
+      }
+
+      try {
+        const url = process.env.DATABASE_URL;
+        if (!url) {
+          throw new Error("DATABASE_URL is not set");
+        }
+        const sql = neon(url);
+        await sql`UPDATE opportunities
+           SET sponsorship_tiers = ${sponsorship_tiers},
+               cheapest_tier_with_link = ${cheapest_tier_with_link || null},
+               updated_at = ${Math.floor(Date.now() / 1000)}
+           WHERE id = ${id}`;
+        return Response.json({ success: true });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to update tiers";
+        console.error("Error updating tiers:", e);
+        return Response.json(
+          { error: message },
+          { status: 500 },
+        );
+      }
     }
 
     return Response.json(
