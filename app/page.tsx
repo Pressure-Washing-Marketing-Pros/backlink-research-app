@@ -73,6 +73,7 @@ export default function Home() {
   } | null>(null);
   const [tierModalIndex, setTierModalIndex] = useState<number | null>(null);
   const [editingTiers, setEditingTiers] = useState<Array<{ name: string; price: string; includesLink: boolean }>>([]);
+  const [savingIndividual, setSavingIndividual] = useState<Set<string>>(new Set());
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -237,6 +238,47 @@ export default function Home() {
       alert(`Error saving to inventory: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setSavingToInventory(false);
+    }
+  }
+
+  async function saveIndividualToInventory(opportunity: Opportunity) {
+    if (!result) return;
+    const rowKey = getOpportunityKey(opportunity);
+    setSavingIndividual((prev) => new Set(prev).add(rowKey));
+    try {
+      const mergedOpp = mergeOpportunity(opportunity);
+      const res = await fetch("/api/opportunities/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runResult: { ...result, opportunities: [mergedOpp] },
+          clientName: result.summary.client,
+        }),
+      });
+      const data = await parseApiResponse<{
+        saved_count?: number;
+        skipped_duplicates?: number;
+        skipped_domains?: { domain: string; reason: string }[];
+        error?: string;
+      }>(res);
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save opportunity");
+      }
+      if (data.saved_count && data.saved_count > 0) {
+        alert("✓ Saved to inventory successfully!");
+      } else if (data.skipped_duplicates && data.skipped_duplicates > 0) {
+        alert("⚠ Skipped - already in inventory");
+      } else if (data.skipped_domains && data.skipped_domains.length > 0) {
+        alert(`⚠ Skipped: ${data.skipped_domains[0].reason}`);
+      }
+    } catch (err) {
+      alert(`Error saving: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSavingIndividual((prev) => {
+        const next = new Set(prev);
+        next.delete(rowKey);
+        return next;
+      });
     }
   }
 
@@ -546,6 +588,7 @@ export default function Home() {
                       "Submission method",
                       "Trigger",
                       "Query",
+                      "Actions",
                     ].map((h) => (
                       <th
                         key={h}
@@ -731,12 +774,21 @@ export default function Home() {
                           </td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Human Review Trigger"]}</td>
                           <td className="px-3 py-2 text-xs text-zinc-500">{o["Search Query Used"]}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => saveIndividualToInventory(o)}
+                              disabled={savingIndividual.has(rowKey) || o.Decision === "Reject"}
+                              className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              {savingIndividual.has(rowKey) ? "Saving..." : "Save to Inventory"}
+                            </button>
+                          </td>
                         </tr>
                     );
                   })}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={19} className="px-3 py-8 text-center text-zinc-500">
+                      <td colSpan={20} className="px-3 py-8 text-center text-zinc-500">
                         No rows match the current filter.
                       </td>
                     </tr>
