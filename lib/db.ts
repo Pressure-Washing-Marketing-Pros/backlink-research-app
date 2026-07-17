@@ -114,6 +114,7 @@ export interface StoredOpportunity {
   link_evidence?: string;
   payment_amount?: string;
   payment_type?: string;
+  sponsorship_tiers?: string;
   cheapest_tier_with_link?: string;
   tier_name?: string;
   submission_method?: string;

@@ -60,10 +60,10 @@ const EXPORT_COLUMNS = [
   "human_review_trigger",
   "payment_amount",
   "payment_type",
+  "sponsorship_tiers",
+  "cheapest_tier_with_link",
   "submission_method",
   "contact_email",
-  "dr",
-  "organic_traffic",
   "link_evidence",
   "current_sponsors_displayed",
   "freshness_notes",
@@ -136,9 +136,7 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [decisionFilter, setDecisionFilter] = useState("");
   const [paymentTypeFilter, setPaymentTypeFilter] = useState("");
-  const [minDr, setMinDr] = useState("");
-  const [maxDr, setMaxDr] = useState("");
-  const [sortBy, setSortBy] = useState<"created" | "dr" | "traffic" | "score">("created");
+  const [sortBy, setSortBy] = useState<"created" | "score">("created");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("DESC");
   const [currentPage, setCurrentPage] = useState(0);
   const limit = 50;
@@ -158,12 +156,10 @@ export default function Dashboard() {
       if (searchTerm) params.append("search", searchTerm);
       if (decisionFilter) params.append("decision", decisionFilter);
       if (paymentTypeFilter) params.append("paymentType", paymentTypeFilter);
-      if (minDr) params.append("minDr", minDr);
-      if (maxDr) params.append("maxDr", maxDr);
       for (const [k, v] of Object.entries(overrides)) params.set(k, v);
       return params;
     },
-    [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage],
+    [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, sortBy, sortOrder, currentPage],
   );
 
   // Fetch stats on mount
@@ -227,7 +223,7 @@ export default function Dashboard() {
     };
     fetchOpportunities();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, minDr, maxDr, sortBy, sortOrder, currentPage]);
+  }, [cityFilter, countyFilter, stateFilter, scopeFilter, searchTerm, decisionFilter, paymentTypeFilter, sortBy, sortOrder, currentPage]);
 
   const resetFilters = useCallback(() => {
     setCityFilter("");
@@ -237,8 +233,6 @@ export default function Dashboard() {
     setSearchTerm("");
     setDecisionFilter("");
     setPaymentTypeFilter("");
-    setMinDr("");
-    setMaxDr("");
     setSortBy("created");
     setSortOrder("DESC");
     setCurrentPage(0);
@@ -605,36 +599,6 @@ export default function Dashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Min DR</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={minDr}
-                    onChange={(e) => {
-                      setMinDr(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max DR</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={maxDr}
-                    onChange={(e) => {
-                      setMaxDr(e.target.value);
-                      setCurrentPage(0);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
                   <select
                     value={sortBy}
@@ -645,8 +609,6 @@ export default function Dashboard() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="created">Date Added</option>
-                    <option value="dr">Domain Rating</option>
-                    <option value="traffic">Organic Traffic (secondary)</option>
                     <option value="score">Score</option>
                   </select>
                 </div>
@@ -701,13 +663,13 @@ export default function Dashboard() {
                             Flags
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            DR
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
-                            Traffic
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Package / Payment
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Sponsorship Tiers
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                            Cheapest Tier With Link
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                             Budget Fit
@@ -770,17 +732,15 @@ export default function Dashboard() {
                                   <span className="text-gray-300">—</span>
                                 )}
                               </td>
-                              <td className="px-4 py-4 text-sm text-gray-900 font-semibold">
-                                {typeof opp.dr === "number" ? opp.dr : "N/A"}
-                              </td>
-                              <td className="px-4 py-4 text-xs text-gray-400">
-                                {typeof opp.organic_traffic === "number"
-                                  ? opp.organic_traffic.toLocaleString()
-                                  : "N/A"}
-                              </td>
                               <td className="px-4 py-4 text-sm text-gray-600">
                                 {opp.payment_amount || "Unknown"}
                                 {opp.payment_type ? ` (${opp.payment_type})` : ""}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-gray-600">
+                                {opp.sponsorship_tiers || "Unknown"}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-gray-600">
+                                {opp.cheapest_tier_with_link || "Unknown"}
                               </td>
                               <td className="px-4 py-4 text-xs">
                                 <span
