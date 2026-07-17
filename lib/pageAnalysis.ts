@@ -27,6 +27,8 @@ import type {
   LocalRelevanceRating,
   PagePurpose,
   RejectionCategory,
+  TierData,
+  TierRow,
 } from "./types";
 
 export function matchTerms(text: string, terms: readonly string[]): string[] {
@@ -384,6 +386,143 @@ export function analyzeContent(text: string): ContentAnalysis {
     pricingTerms: matchTerms(text, PRICING_TERMS),
     prices: all,
     lowestPrice: lowest,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tier extraction: parse sponsorship tier tables and detect link inclusion
+// ---------------------------------------------------------------------------
+
+function identifyLinkTier(tierText: string): boolean {
+  const lower = tierText.toLowerCase();
+  const linkKeywords = [
+    "website link", "includes link", "link included", "website listed",
+    "logo link", "website feature", "listed on", "sponsor page",
+    "included in", "homepage", "featured on"
+  ];
+  const negKeywords = ["no link", "not included", "view only", "display only"];
+
+  const hasNegative = negKeywords.some(k => lower.includes(k));
+  if (hasNegative) return false;
+
+  return linkKeywords.some(k => lower.includes(k));
+}
+
+function extractCellText(cell: string): string {
+  return cell.replace(/<[^>]*>/g, "").trim();
+}
+
+function parseHtmlTables(html: string): TierRow[] {
+  const tiers: TierRow[] = [];
+  const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+  let tableMatch;
+
+  while ((tableMatch = tableRegex.exec(html)) !== null) {
+    const tableContent = tableMatch[1];
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(tableContent)) !== null) {
+      const rowContent = rowMatch[1];
+      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      const cells: string[] = [];
+      let cellMatch;
+
+      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
+        cells.push(extractCellText(cellMatch[1]));
+      }
+
+      if (cells.length >= 2) {
+        const tierName = cells[0];
+        const priceText = cells[cells.length - 1];
+        const rowText = cells.join(" ");
+
+        const priceMatch = priceText.match(/\$[\d,]+(?:\.\d{2})?/);
+        const price = priceMatch ?
+          parseInt(priceMatch[0].replace(/[$,]/g, ""), 10) : null;
+
+        if (tierName && (price !== null || priceText.toLowerCase().includes("contact"))) {
+          tiers.push({
+            name: tierName,
+            price,
+            priceText,
+            includesLink: identifyLinkTier(rowText),
+            rawText: rowText,
+          });
+        }
+      }
+    }
+
+    if (tiers.length > 0) break;
+  }
+
+  return tiers;
+}
+
+function extractTiersFromText(text: string): TierRow[] {
+  const tiers: TierRow[] = [];
+  const lines = text.split("\n");
+  const commonTierNames = ["bronze", "silver", "gold", "platinum",
+    "starter", "pro", "enterprise", "basic", "standard", "premium"];
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    for (const tierName of commonTierNames) {
+      if (lower.includes(tierName)) {
+        const priceMatch = line.match(/\$[\d,]+(?:\.\d{2})?/);
+        const price = priceMatch ?
+          parseInt(priceMatch[0].replace(/[$,]/g, ""), 10) : null;
+
+        if (price !== null || line.toLowerCase().includes("contact")) {
+          tiers.push({
+            name: tierName.charAt(0).toUpperCase() + tierName.slice(1),
+            price,
+            priceText: priceMatch ? priceMatch[0] : "Contact for pricing",
+            includesLink: identifyLinkTier(line),
+            rawText: line,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  return tiers;
+}
+
+export function extractTiers(html: string, text: string): TierData {
+  let allTiers = parseHtmlTables(html);
+
+  if (allTiers.length === 0) {
+    allTiers = extractTiersFromText(text);
+  }
+
+  if (allTiers.length === 0) {
+    return {
+      allTiers: [],
+      cheapestWithLink: null,
+      formattedTiers: "Unknown",
+    };
+  }
+
+  allTiers.sort((a, b) => {
+    const priceA = a.price ?? Infinity;
+    const priceB = b.price ?? Infinity;
+    return priceA - priceB;
+  });
+
+  const cheapestWithLink = allTiers.find(t => t.includesLink) || null;
+
+  const formatted = allTiers.map(t => {
+    const priceStr = t.price !== null ? `$${t.price}` : t.priceText;
+    const linkNote = t.includesLink ? " (includes link)" : "";
+    return `${t.name} ${priceStr}${linkNote}`;
+  }).join(", ");
+
+  return {
+    allTiers,
+    cheapestWithLink,
+    formattedTiers: formatted,
   };
 }
 

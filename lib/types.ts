@@ -139,6 +139,20 @@ export type BudgetFitStatus =
   | "Over Budget (Exception Allowed)"
   | "Price Unknown";
 
+export interface TierRow {
+  name: string;
+  price: number | null;
+  priceText: string;
+  includesLink: boolean;
+  rawText: string;
+}
+
+export interface TierData {
+  allTiers: TierRow[];
+  cheapestWithLink: TierRow | null;
+  formattedTiers: string;
+}
+
 /**
  * What the scraped page actually IS. Only the first four are eligible for
  * approval — everything else is rejected or reviewed, never approved.

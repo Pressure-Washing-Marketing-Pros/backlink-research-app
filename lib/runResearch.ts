@@ -19,6 +19,7 @@ import {
   serpQuery,
   type OnPageResult,
 } from "@/lib/dataforseo";
+import { extractTiers } from "@/lib/pageAnalysis";
 import { getExistingOpportunitySignals } from "@/lib/db";
 import { renderQueries, validateInputs } from "@/lib/queryBank";
 import { normalizeUrl } from "@/lib/urlNormalize";
@@ -30,6 +31,7 @@ import type {
   RunResult,
   SerpResult,
   TechnicalStatus,
+  TierData,
   ValidationError,
 } from "@/lib/types";
 
@@ -368,6 +370,7 @@ function makeOpportunity(args: {
   searchQueryUsed: string;
   usedJs: boolean;
   redirected: boolean;
+  html?: string;
   currentSponsorsLinked?: "Yes" | "No" | "Unknown";
   paymentType?: PaymentType;
   contactPageUrl?: string;
@@ -387,6 +390,7 @@ function makeOpportunity(args: {
     searchQueryUsed,
     usedJs,
     redirected,
+    html,
     currentSponsorsLinked,
     paymentType,
     contactPageUrl,
@@ -394,6 +398,7 @@ function makeOpportunity(args: {
   } = args;
 
   const pricing = toPricing(text);
+  const tiers = extractTiers(html || "", text);
   const relevance = classifyLocalRelevance(serp, inputs);
   const locationBlob = `${title} ${text} ${opportunityUrl}`;
   const classification = detectLocationClassification(
@@ -440,13 +445,13 @@ function makeOpportunity(args: {
     "Link Evidence": "Manual verification required.",
     "Payment Amount": pricing.amount,
     "Pricing Notes": pricing.notes,
-    "Sponsorship Tiers": "Unknown",
-    "Cheapest Tier With Link": "Unknown",
+    "Sponsorship Tiers": tiers.formattedTiers,
+    "Cheapest Tier With Link": tiers.cheapestWithLink ? `${tiers.cheapestWithLink.name} (${tiers.cheapestWithLink.priceText})` : "Unknown",
     "Website Link Included": "Unknown",
     "Logo Included": "Unknown",
     "Payment Type": paymentType ?? "Unknown",
     "Payment Method": "Unknown",
-    "Tier Name": "Unknown",
+    "Tier Name": tiers.allTiers.length > 0 ? tiers.allTiers[0].name : "Unknown",
     "Submission Method": "Unknown",
     "Submission URL": "",
     "Contact Email": "",
@@ -632,6 +637,7 @@ export async function runResearch(
           searchQueryUsed: item.c.serp.search_query_used,
           usedJs: item.page.usedJavaScript,
           redirected: false,
+          html: "",
         }),
       );
       return false;
@@ -748,6 +754,7 @@ export async function runResearch(
         searchQueryUsed: item.c.serp.search_query_used,
         usedJs: item.page.usedJavaScript,
         redirected: normalizeUrl(item.page.finalUrl)?.key !== normalizeUrl(item.c.fetchUrl)?.key,
+        html: item.page.html,
         currentSponsorsLinked: item.currentSponsorsLinked,
         paymentType: item.paymentType,
         contactPageUrl: item.contactPageUrl,
