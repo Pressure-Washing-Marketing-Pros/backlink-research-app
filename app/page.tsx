@@ -71,6 +71,8 @@ export default function Home() {
     skipped_duplicates: number;
     skipped_domains: { domain: string; reason: string }[];
   } | null>(null);
+  const [tierModalIndex, setTierModalIndex] = useState<number | null>(null);
+  const [editingTiers, setEditingTiers] = useState<Array<{ name: string; price: string; includesLink: boolean }>>([]);
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -538,7 +540,6 @@ export default function Home() {
                       "Payment Type",
                       "Sponsorship Tiers",
                       "Cheapest Tier With Link",
-                      "Tier Name",
                       "Current Sponsors Linked",
                       "Contact Page URL",
                       "Contact Fallback",
@@ -647,40 +648,37 @@ export default function Home() {
                             </select>
                           </td>
                           <td className="px-3 py-2 min-w-[14rem]">
-                            <input
-                              value={o["Sponsorship Tiers"] || ""}
-                              onChange={(e) =>
-                                handleRowChange(rowKey, {
-                                  "Sponsorship Tiers": e.target.value,
-                                })
-                              }
-                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="e.g., Bronze $500, Silver $1000 (includes link)"
-                            />
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-700 flex-1">
+                                {o["Sponsorship Tiers"] || "—"}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setTierModalIndex(i);
+                                  const tiersText = o["Sponsorship Tiers"] || "";
+                                  const parsed = tiersText.split(",").map(t => {
+                                    const match = t.trim().match(/^(.+?)\s+\$?(\d+(?:,\d{3})*(?:\.\d{2})?)(.*)/);
+                                    if (match) {
+                                      return {
+                                        name: match[1].trim(),
+                                        price: `$${match[2]}`,
+                                        includesLink: match[3].toLowerCase().includes("link")
+                                      };
+                                    }
+                                    return { name: t.trim(), price: "", includesLink: false };
+                                  }).filter(t => t.name);
+                                  setEditingTiers(parsed.length > 0 ? parsed : [{ name: "", price: "", includesLink: false }]);
+                                }}
+                                className="shrink-0 px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-300"
+                              >
+                                Edit
+                              </button>
+                            </div>
                           </td>
                           <td className="px-3 py-2 min-w-[14rem]">
-                            <input
-                              value={o["Cheapest Tier With Link"] || ""}
-                              onChange={(e) =>
-                                handleRowChange(rowKey, {
-                                  "Cheapest Tier With Link": e.target.value,
-                                })
-                              }
-                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="e.g., Silver ($1000)"
-                            />
-                          </td>
-                          <td className="px-3 py-2 min-w-[10rem]">
-                            <input
-                              value={o["Tier Name"] || ""}
-                              onChange={(e) =>
-                                handleRowChange(rowKey, {
-                                  "Tier Name": e.target.value,
-                                })
-                              }
-                              className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="e.g., Silver"
-                            />
+                            <span className="text-xs text-slate-700">
+                              {o["Cheapest Tier With Link"] || "—"}
+                            </span>
                           </td>
                           <td className="px-3 py-2 min-w-[10rem]">
                             <select
@@ -746,6 +744,134 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+
+            {tierModalIndex !== null && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="rounded-lg bg-white shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col">
+                  <div className="border-b border-slate-200 px-6 py-4">
+                    <h3 className="text-lg font-semibold text-slate-900">Edit Sponsorship Tiers</h3>
+                  </div>
+                  <div className="px-6 py-4 overflow-y-auto flex-1">
+                    <div className="overflow-x-auto mb-4">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Tier Name</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Price</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Includes Link</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-900"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {editingTiers.map((tier, idx) => (
+                            <tr key={idx}>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="text"
+                                  value={tier.name}
+                                  onChange={(e) => {
+                                    const updated = [...editingTiers];
+                                    updated[idx].name = e.target.value;
+                                    setEditingTiers(updated);
+                                  }}
+                                  placeholder="e.g., Bronze"
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input
+                                  type="text"
+                                  value={tier.price}
+                                  onChange={(e) => {
+                                    const updated = [...editingTiers];
+                                    updated[idx].price = e.target.value;
+                                    setEditingTiers(updated);
+                                  }}
+                                  placeholder="$500"
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={tier.includesLink}
+                                  onChange={(e) => {
+                                    const updated = [...editingTiers];
+                                    updated[idx].includesLink = e.target.checked;
+                                    setEditingTiers(updated);
+                                  }}
+                                  className="w-4 h-4"
+                                />
+                              </td>
+                              <td className="px-4 py-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingTiers(editingTiers.filter((_, i) => i !== idx));
+                                  }}
+                                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setEditingTiers([...editingTiers, { name: "", price: "", includesLink: false }]);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded border border-blue-300"
+                    >
+                      + Add Tier
+                    </button>
+                  </div>
+                  <div className="border-t border-slate-200 flex gap-3 px-6 py-4">
+                    <button
+                      onClick={() => setTierModalIndex(null)}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 rounded-lg border border-gray-300"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const formatted = editingTiers
+                          .filter((t) => t.name)
+                          .map((t) => {
+                            const link = t.includesLink ? " (includes link)" : "";
+                            return `${t.name} ${t.price}${link}`;
+                          })
+                          .join(", ");
+
+                        const cheapest = editingTiers
+                          .filter((t) => t.includesLink && t.name)
+                          .sort((a, b) => {
+                            const priceA = parseInt(a.price.replace(/\D/g, "")) || 0;
+                            const priceB = parseInt(b.price.replace(/\D/g, "")) || 0;
+                            return priceA - priceB;
+                          })[0];
+
+                        if (tierModalIndex !== null && result) {
+                          const opp = filtered[tierModalIndex];
+                          const rowKey = getOpportunityKey(opp);
+                          handleRowChange(rowKey, {
+                            "Sponsorship Tiers": formatted || "",
+                            "Cheapest Tier With Link": cheapest
+                              ? `${cheapest.name} (${cheapest.price})`
+                              : "",
+                          });
+                        }
+                        setTierModalIndex(null);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                    >
+                      Save Tiers
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {showSaveDialog && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
