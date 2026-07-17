@@ -398,7 +398,12 @@ function makeOpportunity(args: {
   } = args;
 
   const pricing = toPricing(text);
-  const tiers = extractTiers(html || "", text);
+  // Only extract tiers if we have actual HTML content (skip for failed crawls)
+  const tiers = html && html.length > 100 ? extractTiers(html, text) : {
+    allTiers: [],
+    cheapestWithLink: null,
+    formattedTiers: "Unknown"
+  };
   const relevance = classifyLocalRelevance(serp, inputs);
   const locationBlob = `${title} ${text} ${opportunityUrl}`;
   const classification = detectLocationClassification(

@@ -413,11 +413,13 @@ function extractCellText(cell: string): string {
 }
 
 function parseHtmlTables(html: string): TierRow[] {
+  // Limit HTML processing to first 100KB to prevent timeout on huge pages
+  const htmlToProcess = html.length > 100000 ? html.slice(0, 100000) : html;
   const tiers: TierRow[] = [];
   const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
   let tableMatch;
 
-  while ((tableMatch = tableRegex.exec(html)) !== null) {
+  while ((tableMatch = tableRegex.exec(htmlToProcess)) !== null) {
     const tableContent = tableMatch[1];
     const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
     let rowMatch;
