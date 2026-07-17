@@ -394,6 +394,7 @@ export function analyzeContent(text: string): ContentAnalysis {
 export interface StrictDecisionInput {
   dr: number | null;
   budget: number;
+  budgetExceptionsAllowed: boolean;
   firecrawlStatus: "success" | "failed" | "cached" | "skipped";
   contentLength: number;
   sponsorshipTerms: string[];
@@ -447,7 +448,7 @@ export function decideStatus(input: StrictDecisionInput): StrictDecision {
     }
     return verdict(
       "review",
-      `${reason} Not scraped, to save Firecrawl credits.`,
+      `${reason} The page was not scraped in this run.`,
       "Unknown",
     );
   }
@@ -491,9 +492,16 @@ export function decideStatus(input: StrictDecisionInput): StrictDecision {
   }
 
   if (withinBudget === false) {
+    if (input.budgetExceptionsAllowed) {
+      return verdict(
+        "review",
+        `Review: ${input.pagePurpose} appears over budget (lowest found: $${input.lowestPrice}, budget: $${input.budget}), but budget exceptions are allowed — verify manually.`,
+        "Over budget",
+      );
+    }
     return verdict(
-      "rejected",
-      `Rejected: All detected prices are above the $${input.budget} budget (lowest found: $${input.lowestPrice}).`,
+      "review",
+      `Review: ${input.pagePurpose} appears over budget (lowest found: $${input.lowestPrice}, budget: $${input.budget}) — keep for pipeline visibility, manual decision required.`,
       "Over budget",
     );
   }

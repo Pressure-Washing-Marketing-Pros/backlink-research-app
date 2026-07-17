@@ -14,8 +14,8 @@ export interface ClientInputs {
   client_state: string;
   client_niche: string;
   preferred_landing_page_url: string;
-  maximum_approved_budget: number;
-  budget_exceptions_allowed: YesNo;
+  maximum_approved_budget?: number;
+  budget_exceptions_allowed?: YesNo;
 
   state_abbrev?: string;
   county?: string;
@@ -54,6 +54,8 @@ export interface SerpResult {
   rank: number;
   /** SERP result description/snippet — used by the pre-filter. */
   snippet: string;
+  breadcrumb?: string;
+  serp_result_type?: string;
   search_query_used: string;
   target_city: string;
   target_state: string;
@@ -64,6 +66,7 @@ export interface SerpResult {
 export type AhrefsErrorCategory =
   | "api_key_missing"
   | "rate_limited"
+  | "quota_exceeded"
   | "invalid_domain"
   | "request_failed"
   | "response_mapping_failed"
@@ -119,6 +122,22 @@ export type PaymentType = "One-Time" | "Annual" | "Monthly" | "Recurring" | "Unk
 export type SubmissionMethod = "Form" | "Email" | "Phone" | "PDF Package" | "Unknown";
 export type Decision = "Approve" | "Reject" | "Needs Human Review";
 export type ApprovalStatus = "approved" | "review" | "rejected";
+export type TechnicalStatus =
+  | "Pending crawl"
+  | "Crawling"
+  | "Crawl completed"
+  | "Content analysis completed"
+  | "Crawl failed"
+  | "Blocked"
+  | "Invalid URL"
+  | "No sponsorship content found"
+  | "Duplicate"
+  | "Previously reviewed";
+export type BudgetFitStatus =
+  | "In Budget"
+  | "Over Budget"
+  | "Over Budget (Exception Allowed)"
+  | "Price Unknown";
 
 /**
  * What the scraped page actually IS. Only the first four are eligible for
@@ -189,16 +208,23 @@ export interface PageAnalysis {
 export interface PipelineStats {
   serp_results: number;
   after_dedup: number;
-  non_https: number;
-  prefilter_rejected: number;
-  dr_passed: number;
-  dr_rejected: number;
-  dr_unavailable: number;
-  firecrawl_attempted: number;
-  firecrawl_cached: number;
-  firecrawl_succeeded: number;
-  firecrawl_failed: number;
-  over_scrape_cap: number;
+  unique_domains_found: number;
+  approved_duplicates_skipped: number;
+  needs_review_duplicates_skipped: number;
+  rejected_duplicates_skipped: number;
+  serp_filtered_out: number;
+  onpage_sent: number;
+  onpage_standard_completed: number;
+  onpage_js_completed: number;
+  onpage_failed: number;
+  redirected_urls: number;
+  post_crawl_duplicates_skipped: number;
+  content_analysis_sent: number;
+  content_analysis_skipped?: number;
+  sponsorship_found: number;
+  no_sponsorship_found: number;
+  new_needs_review_created: number;
+  technical_failures_requiring_review: number;
   approved: number;
   needs_review: number;
   rejected: number;
@@ -210,13 +236,27 @@ export interface Opportunity {
   "Opportunity Name": string;
   Domain: string;
   "Opportunity Type": string;
+  "Review Status"?: "Needs Review" | "Approved" | "Rejected";
+  "Technical Status"?: TechnicalStatus;
+  "Technical Notes"?: string;
+  "Original Discovery URL"?: string;
+  "Opportunity URL"?: string;
   "Sponsorship URL": string;
   "Sponsor Page URL": string;
+  "State Abbreviation"?: string;
+  Metro?: string;
+  "Location Classification"?: "City" | "County" | "Metro" | "Statewide" | "Regional" | "Unknown";
+  "Event Name"?: string;
   City: string;
   County: string;
   State: string;
   Location: string;
   "Source Query Scopes": string;
+  "SERP Prequalification Status"?:
+    | "Qualified for Firecrawl"
+    | "Rejected at SERP Filter"
+    | "Skipped Duplicate"
+    | "Needs SERP Review";
   "Resolved Location Scope": QueryScope | "unclear";
   "Location Confidence": "high" | "medium" | "low";
   "Location Evidence": string;
@@ -227,13 +267,37 @@ export interface Opportunity {
   "Link Opportunity Status": LinkOpportunityStatus | "Unknown";
   "Link Evidence": string;
   "Payment Amount": string;
+  "Pricing Notes"?: string;
+  "Sponsorship Tiers"?: string;
+  "Website Link Included"?: "Yes" | "No" | "Unknown";
+  "Logo Included"?: "Yes" | "No" | "Unknown";
+  "Budget Fit"?: BudgetFitStatus;
   "Payment Type": PaymentType;
+  "Payment Method"?: string;
   "Cheapest Tier With Link": string;
   "Tier Name": string;
   "Submission Method": SubmissionMethod;
   "Submission URL": string;
   "Contact Email": string;
   "Contact Person": string;
+  "Event Date"?: string;
+  Deadline?: string;
+  "Rejection Reason"?:
+    | "Too expensive"
+    | "No active sponsorship opportunity"
+    | "No website link included"
+    | "Not locally relevant"
+    | "Wrong location"
+    | "Duplicate opportunity"
+    | "Organization appears inactive"
+    | "Page is outdated"
+    | "Opportunity expired"
+    | "Unable to verify"
+    | "Unable to contact"
+    | "Benefits do not justify the cost"
+    | "Irrelevant result"
+    | "Other";
+  "Rejection Notes"?: string;
   DR: number | "Unknown";
   DA: number | "Unknown";
   Traffic: number | "Unknown";
@@ -266,6 +330,7 @@ export interface RunSummary {
 export interface RunResult {
   summary: RunSummary;
   opportunities: Opportunity[];
+  warning?: string;
 }
 
 export interface ValidationError {

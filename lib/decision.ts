@@ -1,5 +1,6 @@
 import type {
   AhrefsMetrics,
+  BudgetFitStatus,
   ClientInputs,
   Decision,
   LocalRelevanceRating,
@@ -152,7 +153,7 @@ function linkScore(status: SponsorshipCrawlResult["linkOpportunityStatus"]): num
   return 0;
 }
 
-function paymentScore(type: PaymentType, amount: string, budget: number): number {
+function paymentScore(type: PaymentType, amount: string, budget?: number): number {
   let base = 8;
   if (type === "One-Time") base = 20;
   else if (type === "Annual") base = 10;
@@ -209,6 +210,14 @@ export function buildOpportunity(ctx: DecisionContext): Opportunity {
       const amount = Number(match[1].replace(/,/g, ""));
       return !Number.isFinite(amount) || amount <= inputs.maximum_approved_budget;
     })();
+  const budgetFit: BudgetFitStatus =
+    crawl.paymentAmount === "Unknown"
+      ? "Price Unknown"
+      : withinBudget
+        ? "In Budget"
+        : inputs.budget_exceptions_allowed === "Yes"
+          ? "Over Budget (Exception Allowed)"
+          : "Over Budget";
 
   if (!https) {
     decision = "Reject";
@@ -298,6 +307,7 @@ export function buildOpportunity(ctx: DecisionContext): Opportunity {
     "Link Opportunity Status": crawl.linkOpportunityStatus,
     "Link Evidence": crawl.linkEvidence,
     "Payment Amount": crawl.paymentAmount,
+    "Budget Fit": budgetFit,
     "Payment Type": crawl.paymentType,
     "Cheapest Tier With Link": crawl.cheapestTierWithLink,
     "Tier Name": crawl.tierName,
@@ -333,6 +343,7 @@ export const OPPORTUNITY_COLUMNS: (keyof Opportunity)[] = [
   "State",
   "Location",
   "Source Query Scopes",
+  "SERP Prequalification Status",
   "Resolved Location Scope",
   "Location Confidence",
   "Location Evidence",
@@ -343,6 +354,7 @@ export const OPPORTUNITY_COLUMNS: (keyof Opportunity)[] = [
   "Link Opportunity Status",
   "Link Evidence",
   "Payment Amount",
+  "Budget Fit",
   "Payment Type",
   "Cheapest Tier With Link",
   "Tier Name",

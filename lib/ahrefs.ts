@@ -51,9 +51,20 @@ async function ahrefsGet(pathAndQuery: string, attempt = 0): Promise<unknown> {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // Surface the API's own error text when present (e.g. quota messages)
+    // instead of a bare HTTP status code.
+    let apiMessage: string | null = null;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed?.error === "string") apiMessage = parsed.error;
+    } catch {
+      // body wasn't JSON — fall through to the generic message
+    }
+    const category: AhrefsErrorCategory =
+      apiMessage && /units? (left|limit|reached)/i.test(apiMessage) ? "quota_exceeded" : "request_failed";
     throw new AhrefsApiError(
-      `Ahrefs request failed: HTTP ${res.status}`,
-      "request_failed",
+      apiMessage ? `Ahrefs API error (HTTP ${res.status}): ${apiMessage}` : `Ahrefs request failed: HTTP ${res.status}`,
+      category,
       body.slice(0, 300),
     );
   }
@@ -167,11 +178,15 @@ export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
   }
 
   const date = today();
+  // Ahrefs v3 requires `date` on these endpoints — it is not optional. The
+  // retry below uses yesterday's date (not no date at all), for the case
+  // where today's snapshot genuinely isn't published yet.
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const target = encodeURIComponent(domain);
   const drPathWithDate = `/site-explorer/domain-rating?target=${target}&mode=domain&date=${date}`;
   const metricsPathWithDate = `/site-explorer/metrics?target=${target}&mode=domain&date=${date}`;
-  const drPathNoDate = `/site-explorer/domain-rating?target=${target}&mode=domain`;
-  const metricsPathNoDate = `/site-explorer/metrics?target=${target}&mode=domain`;
+  const drPathNoDate = `/site-explorer/domain-rating?target=${target}&mode=domain&date=${yesterday}`;
+  const metricsPathNoDate = `/site-explorer/metrics?target=${target}&mode=domain&date=${yesterday}`;
 
   try {
     let [drJson, metricsJson] = await Promise.all([
@@ -179,24 +194,29 @@ export async function domainMetrics(domain: string): Promise<AhrefsMetrics> {
       ahrefsGet(metricsPathWithDate).catch(toTaggedFailure),
     ]);
 
-    // Once the API key itself is the problem, retrying without a date won't
-    // help — every subsequent call would fail identically, so bail out early
-    // instead of doubling the (already-failing) request count.
+    // Once the API key is missing, or the account has no quota left, retrying
+    // with a different date won't help — every subsequent call would fail
+    // identically, so bail out early instead of doubling the request count.
     const drFailedInitial = isTaggedFailure(drJson);
     const metricsFailedInitial = isTaggedFailure(metricsJson);
-    const authFailure =
-      (isTaggedFailure(drJson) && drJson.__category === "api_key_missing") ||
-      (isTaggedFailure(metricsJson) && metricsJson.__category === "api_key_missing");
+    const isUnretryable = (f: TaggedFailure | null): boolean =>
+      !!f && (f.__category === "api_key_missing" || f.__category === "quota_exceeded");
+    const skipRetry =
+      isUnretryable(isTaggedFailure(drJson) ? drJson : null) ||
+      isUnretryable(isTaggedFailure(metricsJson) ? metricsJson : null);
 
     // Some domains/date snapshots fail for "today" even though Ahrefs has
-    // data. Retry once without date to fetch the latest available snapshot.
-    if (!authFailure && (drFailedInitial || metricsFailedInitial)) {
-      const [drNoDate, metricsNoDate] = await Promise.all([
+    // data. Retry once against yesterday's date to fetch the latest
+    // available snapshot (date is a required param, never omitted).
+    if (!skipRetry && (drFailedInitial || metricsFailedInitial)) {
+      const [drRetry, metricsRetry] = await Promise.all([
         drFailedInitial ? ahrefsGet(drPathNoDate).catch(toTaggedFailure) : Promise.resolve(drJson),
         metricsFailedInitial ? ahrefsGet(metricsPathNoDate).catch(toTaggedFailure) : Promise.resolve(metricsJson),
       ]);
-      drJson = drNoDate;
-      metricsJson = metricsNoDate;
+      // Keep the original failure if the retry also failed — it's usually
+      // more informative than a second, differently-shaped error.
+      drJson = drFailedInitial && isTaggedFailure(drRetry) ? drJson : drRetry;
+      metricsJson = metricsFailedInitial && isTaggedFailure(metricsRetry) ? metricsJson : metricsRetry;
     }
 
     const dr = isTaggedFailure(drJson) ? null : pickNumber(drJson, ["domain_rating"]);
